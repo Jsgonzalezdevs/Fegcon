@@ -1,0 +1,8 @@
+---
+deployment:
+  tasks:
+    - export DEPLOYPATH=/home/fegconco/public_html/admin.fegcon.com.co
+    - /bin/cp -R release/public/assets $DEPLOYPATH
+    - /bin/cp -R release/public/api $DEPLOYPATH
+    - /bin/cp release/public/index.html $DEPLOYPATH
+    - /bin/cp release/public/.htaccess $DEPLOYPATH
