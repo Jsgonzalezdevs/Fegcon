@@ -44,3 +44,7 @@ next-env.d.ts
 /.codex/
 /outputs/
 /work/
+
+# Paquetes de despliegue generados; el contenido de release/ sí se versiona
+# para que cPanel pueda publicar sin compilar Node.js.
+/release/*.zip
