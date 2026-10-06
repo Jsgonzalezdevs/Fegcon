@@ -127,4 +127,18 @@ if ($action === 'products' && $method === 'POST') {
     try { $save->execute([$type, $name, $code, json_encode($parameters, JSON_UNESCAPED_UNICODE), $current['id']]); audit($db, $current['id'], 'producto', (int)$db->lastInsertId(), 'crear', $code); json_response(['ok' => true], 201); } catch (Throwable $e) { json_response(['error' => 'El código del producto ya existe.'], 422); }
 }
 
+if ($action === 'savings-transactions' && $method === 'GET') {
+    require_user();
+    $rows = $db->query('SELECT t.*, a.first_name, a.last_name, p.name AS product_name FROM savings_transactions t JOIN associates a ON a.id=t.associate_id JOIN financial_products p ON p.id=t.product_id ORDER BY t.created_at DESC LIMIT 100')->fetchAll();
+    json_response(['transactions' => $rows]);
+}
+if ($action === 'savings-transactions' && $method === 'POST') {
+    $user = require_user(['administrador','tesoreria']); verify_csrf(); $v = body();
+    $associate = (int)($v['associate_id'] ?? 0); $product = (int)($v['product_id'] ?? 0); $amount = (float)($v['amount'] ?? 0); $type = clean($v['movement_type'] ?? '');
+    if (!$associate || !$product || $amount <= 0 || !in_array($type, ['aporte','retiro'], true)) json_response(['error' => 'Completa asociado, producto, tipo y valor.'], 422);
+    $q=$db->prepare('INSERT INTO savings_transactions (associate_id,product_id,movement_type,amount,reference,recorded_by) VALUES (?,?,?,?,?,?)'); $q->execute([$associate,$product,$type,$amount,substr(clean($v['reference'] ?? ''),0,100),$user['id']]); audit($db,$user['id'],'ahorro',(int)$db->lastInsertId(),'registrar',$type); json_response(['ok'=>true],201);
+}
+if ($action === 'credit-applications' && $method === 'GET') { require_user(); $rows=$db->query('SELECT c.*,a.first_name,a.last_name,p.name AS product_name FROM credit_applications c JOIN associates a ON a.id=c.associate_id JOIN financial_products p ON p.id=c.product_id ORDER BY c.created_at DESC LIMIT 100')->fetchAll(); json_response(['applications'=>$rows]); }
+if ($action === 'credit-applications' && $method === 'POST') { $user=require_user(['administrador','creditos']); verify_csrf(); $v=body(); $a=(int)($v['associate_id']??0);$p=(int)($v['product_id']??0);$amount=(float)($v['amount']??0);$term=(int)($v['term_months']??0); if(!$a||!$p||$amount<=0||$term<1) json_response(['error'=>'Completa asociado, línea, monto y plazo.'],422); $q=$db->prepare('INSERT INTO credit_applications (associate_id,product_id,requested_amount,requested_term_months,purpose,created_by) VALUES (?,?,?,?,?,?)');$q->execute([$a,$p,$amount,$term,substr(clean($v['purpose']??''),0,255),$user['id']]);audit($db,$user['id'],'credito',(int)$db->lastInsertId(),'solicitar','Solicitud');json_response(['ok'=>true],201); }
+
 json_response(['error' => 'Ruta no encontrada.'], 404);
