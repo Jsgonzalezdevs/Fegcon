@@ -84,4 +84,28 @@ if ($action === 'associates' && $method === 'POST') {
     }
 }
 
+if ($action === 'settings' && $method === 'GET') {
+    require_user(['administrador']);
+    $rows = $db->query('SELECT setting_key, setting_value FROM app_settings')->fetchAll();
+    $settings = [];
+    foreach ($rows as $row) $settings[$row['setting_key']] = json_decode($row['setting_value'], true);
+    json_response(['settings' => $settings]);
+}
+
+if ($action === 'settings' && $method === 'POST') {
+    $current = require_user(['administrador']); verify_csrf();
+    $input = body();
+    $organization = is_array($input['organization'] ?? null) ? $input['organization'] : [];
+    $modules = is_array($input['modules'] ?? null) ? $input['modules'] : [];
+    $organization = ['name' => substr(clean($organization['name'] ?? ''), 0, 190), 'nit' => substr(clean($organization['nit'] ?? ''), 0, 50), 'email' => substr(clean($organization['email'] ?? ''), 0, 190), 'currency' => 'COP'];
+    $allowed = ['afiliaciones', 'ahorros', 'creditos', 'cobros', 'pagos'];
+    $modules = array_fill_keys($allowed, false);
+    foreach ($allowed as $key) $modules[$key] = !empty($input['modules'][$key]);
+    $save = $db->prepare('INSERT INTO app_settings (setting_key, setting_value, updated_by) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value), updated_by=VALUES(updated_by)');
+    $save->execute(['organization', json_encode($organization, JSON_UNESCAPED_UNICODE), $current['id']]);
+    $save->execute(['modules', json_encode($modules, JSON_UNESCAPED_UNICODE), $current['id']]);
+    audit($db, $current['id'], 'configuracion', 0, 'actualizar', 'Configuración general');
+    json_response(['organization' => $organization, 'modules' => $modules]);
+}
+
 json_response(['error' => 'Ruta no encontrada.'], 404);
