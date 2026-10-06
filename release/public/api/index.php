@@ -108,4 +108,23 @@ if ($action === 'settings' && $method === 'POST') {
     json_response(['organization' => $organization, 'modules' => $modules]);
 }
 
+if ($action === 'products' && $method === 'GET') {
+    require_user(['administrador']);
+    $type = clean($_GET['type'] ?? '');
+    $stmt = $db->prepare('SELECT id, product_type, name, code, parameters_json, active FROM financial_products WHERE (? = "" OR product_type = ?) ORDER BY product_type, name');
+    $stmt->execute([$type, $type]);
+    $products = $stmt->fetchAll();
+    foreach ($products as &$product) $product['parameters'] = json_decode($product['parameters_json'], true) ?: [];
+    json_response(['products' => $products]);
+}
+
+if ($action === 'products' && $method === 'POST') {
+    $current = require_user(['administrador']); verify_csrf(); $input = body();
+    $type = clean($input['type'] ?? ''); $name = substr(clean($input['name'] ?? ''), 0, 150); $code = strtoupper(substr(clean($input['code'] ?? ''), 0, 40));
+    if (!in_array($type, ['ahorro', 'credito'], true) || !$name || !$code) json_response(['error' => 'Tipo, nombre y código son obligatorios.'], 422);
+    $parameters = is_array($input['parameters'] ?? null) ? $input['parameters'] : [];
+    $save = $db->prepare('INSERT INTO financial_products (product_type, name, code, parameters_json, created_by) VALUES (?, ?, ?, ?, ?)');
+    try { $save->execute([$type, $name, $code, json_encode($parameters, JSON_UNESCAPED_UNICODE), $current['id']]); audit($db, $current['id'], 'producto', (int)$db->lastInsertId(), 'crear', $code); json_response(['ok' => true], 201); } catch (Throwable $e) { json_response(['error' => 'El código del producto ya existe.'], 422); }
+}
+
 json_response(['error' => 'Ruta no encontrada.'], 404);
