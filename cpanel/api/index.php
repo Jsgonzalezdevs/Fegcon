@@ -5,6 +5,7 @@ require __DIR__ . '/bootstrap.php';
 $action = clean($_GET['action'] ?? '');
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 $db = db();
+enforce_module_permission($db, $action, $method, $_GET);
 
 if ($action === 'login' && $method === 'POST') {
     start_session();
@@ -28,7 +29,7 @@ if ($action === 'login' && $method === 'POST') {
     $_SESSION['csrf'] = bin2hex(random_bytes(32));
     $_SESSION['user'] = ['id' => (int) $account['id'], 'name' => $account['full_name'], 'email' => $account['email'], 'role' => $account['role']];
     audit($db, (int) $account['id'], 'sesion', (int) $account['id'], 'inicio');
-    json_response(['user' => $_SESSION['user'], 'csrf' => $_SESSION['csrf']]);
+    json_response(['user' => user(), 'csrf' => $_SESSION['csrf']]);
 }
 
 if ($action === 'logout' && $method === 'POST') {
@@ -45,6 +46,27 @@ if ($action === 'me' && $method === 'GET') {
     if (!$current) json_response(['user' => null]);
     start_session();
     json_response(['user' => $current, 'csrf' => $_SESSION['csrf'] ?? '']);
+}
+
+if ($action === 'role-permissions' && $method === 'GET') {
+    require_user(['superadmin']);
+    json_response(['role' => 'supervisor', 'modules' => role_permission_defaults(), 'permissions' => role_permissions($db)]);
+}
+
+if ($action === 'role-permissions' && $method === 'POST') {
+    $current = require_user(['superadmin']); verify_csrf(); $input = body();
+    $allowed = role_permission_defaults(); $submitted = is_array($input['permissions'] ?? null) ? $input['permissions'] : [];
+    $normalized = [];
+    foreach ($allowed as $module => $capabilities) {
+        $value = is_array($submitted[$module] ?? null) ? $submitted[$module] : [];
+        $view = filter_var($value['view'] ?? false, FILTER_VALIDATE_BOOLEAN);
+        $manage = filter_var($value['manage'] ?? false, FILTER_VALIDATE_BOOLEAN) && $view && $capabilities['manage'];
+        $normalized[$module] = ['view' => $view, 'manage' => $manage];
+    }
+    $save = $db->prepare('INSERT INTO app_settings(setting_key,setting_value,updated_by) VALUES("role_permissions",?,?) ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value),updated_by=VALUES(updated_by)');
+    $save->execute([json_encode(['operador' => $normalized], JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR), $current['id']]);
+    audit($db, $current['id'], 'permisos', 0, 'actualizar', 'Permisos del perfil Supervisor');
+    json_response(['ok' => true, 'permissions' => $normalized, 'message' => 'Permisos del perfil Supervisor actualizados.']);
 }
 
 if ($action === 'business-rules' && $method === 'GET') {
@@ -142,7 +164,7 @@ if ($action === 'associates' && $method === 'POST') {
         $insert = $db->prepare('INSERT INTO associates (document_type, document_number, first_name, last_name, email, phone, company_id, status) VALUES (?, ?, ?, ?, ?, ?, ?, "activo")');
         $insert->execute([clean($input['documentType'] ?? '') ?: 'CC', $document, $first, $last, clean($input['email'] ?? '') ?: null, clean($input['phone'] ?? '') ?: null, $companyId ?: null]);
         $id = (int) $db->lastInsertId();
-        $event = $db->prepare('INSERT INTO associate_events (associate_id, event_type, title, description, created_by) VALUES (?, "registro", "Registro aprobado", "El registro fue autorizado por la Superadmin.", ?)');
+        $event = $db->prepare('INSERT INTO associate_events (associate_id, event_type, title, description, created_by) VALUES (?, "registro", "Registro aprobado", "El registro fue autorizado.", ?)');
         $event->execute([$id, $current['id']]);
         audit($db, $current['id'], 'asociado', $id, 'crear', $document);
         $db->commit();
@@ -163,7 +185,7 @@ if ($action === 'associates' && $method === 'PATCH') {
         $db->beginTransaction();$exists=$db->prepare('SELECT id FROM associates WHERE id=? FOR UPDATE');$exists->execute([$id]);if(!$exists->fetchColumn())throw new RuntimeException('El asociado no existe.');
         $companyId=null;$companyName=clean($v['company']??'');if($companyName!==''){$q=$db->prepare('SELECT id FROM companies WHERE name=? LIMIT 1');$q->execute([$companyName]);$companyId=$q->fetchColumn();if(!$companyId){$q=$db->prepare('INSERT INTO companies(name) VALUES(?)');$q->execute([$companyName]);$companyId=(int)$db->lastInsertId();}}
         $q=$db->prepare('UPDATE associates SET document_type=?,document_number=?,first_name=?,last_name=?,email=?,phone=?,company_id=? WHERE id=?');$q->execute([clean($v['documentType']??'')?:'CC',$document,$first,$last,$email?:null,clean($v['phone']??'')?:null,$companyId?:null,$id]);
-        $q=$db->prepare('INSERT INTO associate_events(associate_id,event_type,title,description,created_by) VALUES (?,"actualizacion","Datos actualizados","La Superadmin actualizó los datos del asociado.",?)');$q->execute([$id,$current['id']]);audit($db,$current['id'],'asociado',$id,'actualizar',$document);$db->commit();json_response(['ok'=>true,'message'=>'Datos del asociado actualizados.']);
+        $q=$db->prepare('INSERT INTO associate_events(associate_id,event_type,title,description,created_by) VALUES (?,"actualizacion","Datos actualizados","Los datos del asociado fueron actualizados.",?)');$q->execute([$id,$current['id']]);audit($db,$current['id'],'asociado',$id,'actualizar',$document);$db->commit();json_response(['ok'=>true,'message'=>'Datos del asociado actualizados.']);
     } catch (Throwable $error) { if($db->inTransaction())$db->rollBack();json_response(['error'=>$error instanceof RuntimeException?$error->getMessage():'No fue posible actualizar el asociado.'],422); }
 }
 
@@ -171,7 +193,7 @@ if ($action === 'associates' && $method === 'DELETE') {
     $current=require_user(['superadmin','operador']);verify_csrf();$id=(int)($_GET['id']??0);if(!$id)json_response(['error'=>'Selecciona el asociado que deseas retirar.'],422);
     $lookup=$db->prepare('SELECT first_name,last_name,document_number FROM associates WHERE id=? AND status="activo"');$lookup->execute([$id]);$person=$lookup->fetch();if(!$person)json_response(['error'=>'El asociado ya fue retirado o no existe.'],422);
     queue_operator_change($db,$current,'associate_retire','Retirar a '.$person['first_name'].' '.$person['last_name'],['id'=>$id,'name'=>$person['first_name'].' '.$person['last_name'],'documentNumber'=>$person['document_number']]);
-    try {$db->beginTransaction();$q=$db->prepare('UPDATE associates SET status="retirado" WHERE id=? AND status="activo"');$q->execute([$id]);if(!$q->rowCount())throw new RuntimeException('El asociado ya fue retirado o no existe.');$q=$db->prepare('INSERT INTO associate_events(associate_id,event_type,title,description,created_by) VALUES (?,"retiro","Asociado retirado","La Superadmin autorizó el retiro del asociado.",?)');$q->execute([$id,$current['id']]);audit($db,$current['id'],'asociado',$id,'retirar','');$db->commit();json_response(['ok'=>true,'message'=>'Asociado retirado. El historial financiero se conservó.']);}
+    try {$db->beginTransaction();$q=$db->prepare('UPDATE associates SET status="retirado" WHERE id=? AND status="activo"');$q->execute([$id]);if(!$q->rowCount())throw new RuntimeException('El asociado ya fue retirado o no existe.');$q=$db->prepare('INSERT INTO associate_events(associate_id,event_type,title,description,created_by) VALUES (?,"retiro","Asociado retirado","El retiro fue autorizado.",?)');$q->execute([$id,$current['id']]);audit($db,$current['id'],'asociado',$id,'retirar','');$db->commit();json_response(['ok'=>true,'message'=>'Asociado retirado. El historial financiero se conservó.']);}
     catch (Throwable $error) {if($db->inTransaction())$db->rollBack();json_response(['error'=>$error instanceof RuntimeException?$error->getMessage():'No fue posible retirar el asociado.'],422);}
 }
 
@@ -263,7 +285,7 @@ if ($action === 'credit-applications' && $method === 'PATCH') {
         try{$db->beginTransaction();$result=apply_approved_change($db,$user['id'],$user['id'],'credit_disbursement',$v);$db->commit();json_response(['ok'=>true,'id'=>$result['id'],'message'=>'Crédito desembolsado y plan de cuotas creado.']);}
         catch(Throwable $error){if($db->inTransaction())$db->rollBack();json_response(['error'=>$error instanceof RuntimeException?$error->getMessage():'No fue posible desembolsar el crédito.'],422);}
     }
-    if($user['role']!=='superadmin')json_response(['error'=>'Solo la Superadmin puede aprobar o rechazar créditos.'],403);
+    if($user['role']!=='superadmin')json_response(['error'=>'Esta acción no está disponible para tu perfil.'],403);
     try {
         $db->beginTransaction();$result=apply_approved_change($db,$user['id'],$user['id'],'credit_decision',$v);$db->commit();json_response(['ok'=>true,'monthly_installment'=>$result['monthly_installment']??null]);
     } catch (Throwable $error) {
@@ -355,12 +377,12 @@ if ($action === 'credit-documents' && $method === 'POST') {
         $db->beginTransaction();$status=$current['role']==='superadmin'?'custodiado':'pendiente';$reviewedBy=$status==='custodiado'?$current['id']:null;$reviewedAt=$status==='custodiado'?date('Y-m-d H:i:s'):null;$q=$db->prepare('INSERT INTO credit_documents(credit_application_id,label,original_name,storage_key,mime_type,byte_size,status,created_by,reviewed_by,reviewed_at) VALUES(?,?,?,?,?,?,?,?,?,?)');$q->execute([$creditId,$label,$original,$storageKey,$mime,$size,$status,$current['id'],$reviewedBy,$reviewedAt]);$documentId=(int)$db->lastInsertId();
         if($status==='pendiente'){$summary='Revisar '.$labels[$label].' del crédito #'.$creditId;$payload=['document_id'=>$documentId,'credit_application_id'=>$creditId,'label'=>$label,'original_name'=>$original,'mime_type'=>$mime,'byte_size'=>$size];$q=$db->prepare('INSERT INTO approval_requests(requested_by,operation,summary,payload_json) VALUES(?,?,?,?)');$q->execute([$current['id'],'credit_document_create',substr($summary,0,255),json_encode($payload,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR)]);audit($db,$current['id'],'solicitud_cambio',(int)$db->lastInsertId(),'solicitar',$summary);}
         else audit($db,$current['id'],'documento_credito',$documentId,'custodiar',$label);
-        $db->commit();json_response(['ok'=>true,'pending_approval'=>$status==='pendiente','message'=>$status==='pendiente'?'El soporte quedó privado y espera revisión de la Superadmin.':'Soporte guardado en el expediente privado del crédito.'],201);
+        $db->commit();json_response(['ok'=>true,'pending_approval'=>$status==='pendiente','message'=>$status==='pendiente'?'El soporte quedó privado y pendiente de revisión.':'Soporte guardado en el expediente privado del crédito.'],201);
     } catch(Throwable $error){if($db->inTransaction())$db->rollBack();if($storedPath&&is_file($storedPath))@unlink($storedPath);json_response(['error'=>$error instanceof RuntimeException?$error->getMessage():'No fue posible guardar el soporte.'],422);}
 }
 if ($action === 'credit-documents' && $method === 'DELETE') {
     $current=require_user(['superadmin','operador']);verify_csrf();$id=(int)($_GET['id']??0);$q=$db->prepare('SELECT d.id,d.credit_application_id,d.label,d.status FROM credit_documents d WHERE d.id=?');$q->execute([$id]);$document=$q->fetch();if(!$document||$document['status']!=='custodiado')json_response(['error'=>'El soporte ya fue retirado o no existe.'],422);
-    if($current['role']==='operador'){$summary='Retirar soporte '.$document['label'].' del crédito #'.$document['credit_application_id'];$payload=['document_id'=>$id,'credit_application_id'=>(int)$document['credit_application_id'],'label'=>$document['label']];$q=$db->prepare('INSERT INTO approval_requests(requested_by,operation,summary,payload_json) VALUES(?,?,?,?)');$q->execute([$current['id'],'credit_document_delete',substr($summary,0,255),json_encode($payload,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR)]);audit($db,$current['id'],'solicitud_cambio',(int)$db->lastInsertId(),'solicitar',$summary);json_response(['ok'=>true,'pending_approval'=>true,'message'=>'La solicitud de retiro fue enviada a la Superadmin.'],202);}
+    if($current['role']==='operador'){$summary='Retirar soporte '.$document['label'].' del crédito #'.$document['credit_application_id'];$payload=['document_id'=>$id,'credit_application_id'=>(int)$document['credit_application_id'],'label'=>$document['label']];$q=$db->prepare('INSERT INTO approval_requests(requested_by,operation,summary,payload_json) VALUES(?,?,?,?)');$q->execute([$current['id'],'credit_document_delete',substr($summary,0,255),json_encode($payload,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR)]);audit($db,$current['id'],'solicitud_cambio',(int)$db->lastInsertId(),'solicitar',$summary);json_response(['ok'=>true,'pending_approval'=>true,'message'=>'La solicitud de retiro quedó pendiente de revisión.'],202);}
     $q=$db->prepare('UPDATE credit_documents SET status="retirado",reviewed_by=?,reviewed_at=NOW() WHERE id=? AND status="custodiado"');$q->execute([$current['id'],$id]);if(!$q->rowCount())json_response(['error'=>'El soporte ya fue retirado.'],422);audit($db,$current['id'],'documento_credito',$id,'retirar',$document['label']);json_response(['ok'=>true,'message'=>'Soporte retirado de la vista operativa; se conserva en la carpeta privada.']);
 }
 if ($action === 'credit-document-file' && $method === 'GET') {
@@ -396,7 +418,7 @@ if ($action === 'promissory-notes' && $method === 'GET') { $current=require_user
 if ($action === 'promissory-documents' && $method === 'DELETE') {
     $current=require_user(['superadmin','operador']);verify_csrf();$id=(int)($_GET['id']??0);if(!$id)json_response(['error'=>'Selecciona el documento.'],422);
     $q=$db->prepare('SELECT id,promissory_note_id,label,status FROM promissory_documents WHERE id=?');$q->execute([$id]);$document=$q->fetch();if(!$document||$document['status']!=='custodiado')json_response(['error'=>'El documento ya fue retirado o no existe.'],422);
-    if($current['role']==='operador'){$summary='Retirar documento '.$document['label'].' del pagaré #'.$document['promissory_note_id'];$payload=['document_id'=>$id,'note_id'=>(int)$document['promissory_note_id'],'label'=>$document['label']];$q=$db->prepare('INSERT INTO approval_requests(requested_by,operation,summary,payload_json) VALUES(?,?,?,?)');$q->execute([$current['id'],'promissory_document_delete',substr($summary,0,255),json_encode($payload,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR)]);audit($db,$current['id'],'solicitud_cambio',(int)$db->lastInsertId(),'solicitar',$summary);json_response(['ok'=>true,'pending_approval'=>true,'message'=>'La solicitud de retiro fue enviada a la Superadmin.'],202);}
+    if($current['role']==='operador'){$summary='Retirar documento '.$document['label'].' del pagaré #'.$document['promissory_note_id'];$payload=['document_id'=>$id,'note_id'=>(int)$document['promissory_note_id'],'label'=>$document['label']];$q=$db->prepare('INSERT INTO approval_requests(requested_by,operation,summary,payload_json) VALUES(?,?,?,?)');$q->execute([$current['id'],'promissory_document_delete',substr($summary,0,255),json_encode($payload,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR)]);audit($db,$current['id'],'solicitud_cambio',(int)$db->lastInsertId(),'solicitar',$summary);json_response(['ok'=>true,'pending_approval'=>true,'message'=>'La solicitud de retiro quedó pendiente de revisión.'],202);}
     $q=$db->prepare('UPDATE promissory_documents SET status="retirado",reviewed_by=?,reviewed_at=NOW() WHERE id=? AND status="custodiado"');$q->execute([$current['id'],$id]);if(!$q->rowCount())json_response(['error'=>'El documento ya fue retirado.'],422);audit($db,$current['id'],'documento_pagare',$id,'retirar',$document['label']);json_response(['ok'=>true,'message'=>'Documento retirado de la vista operativa; se conserva bajo custodia privada.']);
 }
 
@@ -407,7 +429,23 @@ if ($action === 'promissory-document-file' && $method === 'GET') {
 }
 
 if ($action === 'promissory-notes' && $method === 'POST') { $u=require_user(['superadmin','operador']);verify_csrf();$v=body();$a=(int)($v['associate_id']??0);$credit=(int)($v['credit_application_id']??0);$number=substr(clean($v['note_number']??''),0,100);if(!$a||!$credit||!$number)json_response(['error'=>'Asociado, crédito aprobado y número de pagaré son obligatorios.'],422);$check=$db->prepare('SELECT id FROM credit_applications WHERE id=? AND associate_id=? AND status IN ("aprobada","desembolsada")');$check->execute([$credit,$a]);if(!$check->fetchColumn())json_response(['error'=>'Selecciona un crédito aprobado que pertenezca a este asociado.'],422);queue_operator_change($db,$u,'promissory_note_create','Registrar pagaré ' . $number,$v);try{$q=$db->prepare('INSERT INTO promissory_notes(associate_id,credit_application_id,note_number,status,notes,created_by)VALUES(?,?,?,?,?,?)');$q->execute([$a,$credit,$number,'borrador',substr(clean($v['notes']??''),0,255),$u['id']]);audit($db,$u['id'],'pagare',(int)$db->lastInsertId(),'crear',$number);json_response(['ok'=>true],201);}catch(Throwable $e){json_response(['error'=>'Ese número de pagaré ya existe.'],422);}}
-if ($action === 'dashboard' && $method === 'GET') { require_user();$receivables=(float)$db->query('SELECT COALESCE(SUM(amount),0) FROM receivables WHERE status IN ("por_vencer","vencida")')->fetchColumn();$installments=(float)$db->query('SELECT COALESCE(SUM(total_amount-paid_amount),0) FROM credit_installments WHERE status="pendiente"')->fetchColumn();json_response(['metrics'=>['asociados'=>(int)$db->query('SELECT COUNT(*) FROM associates WHERE status="activo"')->fetchColumn(),'afiliaciones_pendientes'=>(int)$db->query('SELECT COUNT(*) FROM affiliation_requests WHERE status="en_revision"')->fetchColumn(),'pagos_aplicados'=>(float)$db->query('SELECT COALESCE(SUM(amount),0) FROM payments WHERE status="aplicado"')->fetchColumn(),'cartera_abierta'=>$receivables+$installments]]); }
+if ($action === 'dashboard' && $method === 'GET') {
+    $current = require_user();
+    $permissions = $current['role'] === 'superadmin' ? ['all' => true] : role_permissions($db, $current['role']);
+    $canView = static fn(string $module): bool => $current['role'] === 'superadmin' || !empty($permissions[$module]['view']);
+    $metrics = [
+        'asociados' => $canView('associates') ? (int)$db->query('SELECT COUNT(*) FROM associates WHERE status="activo"')->fetchColumn() : null,
+        'afiliaciones_pendientes' => $canView('affiliations') ? (int)$db->query('SELECT COUNT(*) FROM affiliation_requests WHERE status="en_revision"')->fetchColumn() : null,
+        'pagos_aplicados' => $canView('payments') ? (float)$db->query('SELECT COALESCE(SUM(amount),0) FROM payments WHERE status="aplicado"')->fetchColumn() : null,
+        'cartera_abierta' => null,
+    ];
+    if ($canView('receivables') || $canView('credits')) {
+        $receivables = $canView('receivables') ? (float)$db->query('SELECT COALESCE(SUM(amount),0) FROM receivables WHERE status IN ("por_vencer","vencida")')->fetchColumn() : 0;
+        $installments = $canView('credits') ? (float)$db->query('SELECT COALESCE(SUM(total_amount-paid_amount),0) FROM credit_installments WHERE status="pendiente"')->fetchColumn() : 0;
+        $metrics['cartera_abierta'] = $receivables + $installments;
+    }
+    json_response(['metrics' => $metrics]);
+}
 if ($action === 'users' && $method === 'GET') { require_user(['superadmin']);json_response(['users'=>$db->query('SELECT id,full_name,email,role,active,created_at FROM internal_users ORDER BY full_name')->fetchAll()]); }
 if ($action === 'users' && $method === 'POST') { $u=require_user(['superadmin']);verify_csrf();$v=body();$name=substr(clean($v['full_name']??''),0,160);$email=strtolower(substr(clean($v['email']??''),0,190));$role=clean($v['role']??'');$password=(string)($v['password']??'');if(!$name||!filter_var($email,FILTER_VALIDATE_EMAIL)||$role!=='operador'||strlen($password)<12)json_response(['error'=>'Completa nombre, correo y una contraseña de mínimo 12 caracteres para crear una cuenta Operador.'],422);try{$q=$db->prepare('INSERT INTO internal_users(full_name,email,password_hash,role)VALUES(?,?,?,"operador")');$q->execute([$name,$email,password_hash($password,PASSWORD_DEFAULT)]);audit($db,$u['id'],'usuario',(int)$db->lastInsertId(),'crear',$email);json_response(['ok'=>true],201);}catch(Throwable $e){json_response(['error'=>'Ese correo ya está registrado.'],422);}}
 if ($action === 'users' && $method === 'PATCH') {

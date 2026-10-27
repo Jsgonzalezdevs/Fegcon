@@ -128,17 +128,78 @@ function body(): array {
 
 function clean($value): string { return is_string($value) ? trim($value) : ''; }
 
+function role_permission_defaults(): array {
+    $modules = ['inicio','associates','affiliations','companies','savings','credits','promissory','receivables','payroll','payments','convenios','reports','rules','approvals'];
+    $permissions = [];
+    foreach ($modules as $module) $permissions[$module] = ['view' => true, 'manage' => !in_array($module, ['inicio','reports','rules','approvals'], true)];
+    return $permissions;
+}
+
+function role_permissions(PDO $db, string $role = 'operador'): array {
+    if ($role === 'superadmin') return ['all' => true];
+    $stored = $db->query('SELECT setting_value FROM app_settings WHERE setting_key="role_permissions"')->fetchColumn();
+    $saved = is_string($stored) ? (json_decode($stored, true) ?: []) : [];
+    $defaults = role_permission_defaults();
+    $permissions = is_array($saved['operador'] ?? null) ? $saved['operador'] : [];
+    foreach ($defaults as $module => $capabilities) {
+        $value = is_array($permissions[$module] ?? null) ? $permissions[$module] : [];
+        $defaults[$module] = [
+            'view' => array_key_exists('view', $value) ? (bool)$value['view'] : $capabilities['view'],
+            'manage' => array_key_exists('manage', $value) ? (bool)$value['manage'] : $capabilities['manage'],
+        ];
+        if (!$defaults[$module]['view']) $defaults[$module]['manage'] = false;
+    }
+    return $defaults;
+}
+
+function enforce_module_permission(PDO $db, string $action, string $method, array $query = []): void {
+    $routes = [
+        'business-rules' => ['rules', ['GET' => 'view', 'POST' => 'manage']],
+        'approval-requests' => ['approvals', ['GET' => 'view']],
+        'associates' => ['associates', ['GET' => 'view', 'POST' => 'manage', 'PATCH' => 'manage', 'DELETE' => 'manage']],
+        'affiliations' => ['affiliations', ['GET' => 'view', 'POST' => 'manage', 'PATCH' => 'manage']],
+        'savings-transactions' => ['savings', ['GET' => 'view', 'POST' => 'manage']],
+        'savings-balance' => ['savings', ['GET' => 'view']],
+        'credit-capacity' => ['credits', ['GET' => 'view']],
+        'credit-applications' => ['credits', ['GET' => 'view', 'POST' => 'manage', 'PATCH' => 'manage']],
+        'credit-installments' => ['credits', ['GET' => 'view']],
+        'credit-documents' => ['credits', ['GET' => 'view', 'POST' => 'manage', 'DELETE' => 'manage']],
+        'credit-document-file' => ['credits', ['GET' => 'view']],
+        'promissory-notes' => ['promissory', ['GET' => 'view', 'POST' => 'manage']],
+        'promissory-documents' => ['promissory', ['GET' => 'view', 'POST' => 'manage', 'DELETE' => 'manage']],
+        'promissory-document-file' => ['promissory', ['GET' => 'view']],
+        'receivables' => ['receivables', ['GET' => 'view', 'POST' => 'manage']],
+        'payments' => ['payments', ['GET' => 'view', 'POST' => 'manage']],
+        'companies' => ['companies', ['GET' => 'view', 'POST' => 'manage']],
+        'catalog' => ['convenios', ['GET' => 'view', 'POST' => 'manage']],
+        'products' => ['credits', ['GET' => 'view']],
+        'payroll-collections' => ['payroll', ['GET' => 'view', 'POST' => 'manage', 'PATCH' => 'manage']],
+        'payroll-items' => ['payroll', ['GET' => 'view', 'POST' => 'manage', 'PATCH' => 'manage', 'DELETE' => 'manage']],
+        'dashboard' => ['inicio', ['GET' => 'view']],
+    ];
+    if (!isset($routes[$action]) || !isset($routes[$action][1][$method])) return;
+    $current = require_user();
+    if ($current['role'] === 'superadmin') return;
+    $module = $action === 'products' && ($query['type'] ?? '') === 'ahorro' ? 'savings' : $routes[$action][0];
+    $capability = $routes[$action][1][$method];
+    $permissions = role_permissions($db, $current['role']);
+    if (empty($permissions[$module][$capability])) json_response(['error' => 'Tu perfil no tiene acceso a este módulo o acción.'], 403);
+}
+
 function user(): ?array {
     start_session();
     if (!isset($_SESSION['user']) || !is_array($_SESSION['user'])) return null;
-    $stmt = db()->prepare('SELECT active FROM internal_users WHERE id=? LIMIT 1');
+    $database = db();
+    $stmt = $database->prepare('SELECT active,full_name,email,role FROM internal_users WHERE id=? LIMIT 1');
     $stmt->execute([(int) ($_SESSION['user']['id'] ?? 0)]);
-    if (!(int) $stmt->fetchColumn()) {
+    $account = $stmt->fetch();
+    if (!$account || !(int)$account['active']) {
         $_SESSION = [];
         session_destroy();
         return null;
     }
-    return $_SESSION['user'];
+    $role = (string)$account['role'];
+    return ['id' => (int)$_SESSION['user']['id'], 'name' => $account['full_name'], 'email' => $account['email'], 'role' => $role, 'role_label' => $role === 'superadmin' ? 'Superadmin' : 'Supervisor', 'permissions' => role_permissions($database, $role)];
 }
 
 function require_user(array $roles = []): array {
@@ -153,7 +214,7 @@ function queue_operator_change(PDO $db, array $current, string $operation, strin
     $stmt = $db->prepare('INSERT INTO approval_requests (requested_by, operation, summary, payload_json) VALUES (?, ?, ?, ?)');
     $stmt->execute([$current['id'], $operation, substr($summary, 0, 255), json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR)]);
     audit($db, $current['id'], 'solicitud_cambio', (int) $db->lastInsertId(), 'solicitar', $summary);
-    json_response(['ok' => true, 'pending_approval' => true, 'message' => 'Solicitud enviada a la Superadmin para aprobación.'], 202);
+    json_response(['ok' => true, 'pending_approval' => true, 'message' => 'Tu solicitud quedó pendiente de revisión.'], 202);
 }
 
 function require_core_product(PDO $db, int $productId, string $type): void {
