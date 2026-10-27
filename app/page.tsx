@@ -281,8 +281,8 @@ function SuperadminHub({ csrf, go, initialSection = "resumen" }: { csrf: string;
   const [section, setSection] = useState<AdminSection>(initialSection);
   return <div className="page superadmin-page">
     <Heading eyebrow="CONTROL DEL FONDO" title="Centro de control" text="Administra accesos, revisa cambios y consulta las reglas de FEGCON." />
-    <nav className="admin-tabs" aria-label="Secciones de administración">
-      {adminSections.map((item) => { const Icon = item.icon; return <button key={item.id} className={section === item.id ? "active" : ""} aria-current={section === item.id ? "page" : undefined} onClick={() => setSection(item.id)}><span className="admin-tab-icon"><Icon /></span><span className="admin-tab-copy"><b>{item.label}</b><small>{item.help}</small></span></button>; })}
+    <nav className="admin-tabs admin-tabs-complete" aria-label="Secciones de administración">
+      {adminSections.map((item) => { const Icon = item.icon; return <button key={item.id} title={item.help} className={section === item.id ? "active" : ""} aria-current={section === item.id ? "page" : undefined} onClick={() => setSection(item.id)}><span className="admin-tab-icon"><Icon /></span><span className="admin-tab-copy"><b>{item.label}</b><small>{item.help}</small></span></button>; })}
     </nav>
     {section === "resumen" && <AdminOverview go={go} setSection={setSection} />}
     {section === "aprobaciones" && <ApprovalRequestsPanel csrf={csrf} role="superadmin" />}
@@ -302,7 +302,7 @@ function OperatorHub({ csrf, initialSection = "reglas" }: { csrf: string; initia
   const currentSection = section === "reglas" && !canSeeRules ? "solicitudes" : section === "solicitudes" && !canSeeRequests ? "reglas" : section;
   return <div className="page superadmin-page">
     <Heading eyebrow="AYUDA PARA LA OPERACIÓN" title={canSeeRules && canSeeRequests ? "Reglas y solicitudes" : canSeeRules ? "Reglas del fondo" : "Mis solicitudes"} text="Consulta la información y las tareas disponibles para tu perfil." />
-    {(canSeeRules || canSeeRequests) && <nav className="admin-tabs" aria-label="Ayuda para la operación">{canSeeRules && <button className={currentSection === "reglas" ? "active" : ""} aria-current={currentSection === "reglas" ? "page" : undefined} onClick={() => setSection("reglas")}><b>Reglas del fondo</b><small>Condiciones vigentes</small></button>}{canSeeRequests && <button className={currentSection === "solicitudes" ? "active" : ""} aria-current={currentSection === "solicitudes" ? "page" : undefined} onClick={() => setSection("solicitudes")}><b>Mis solicitudes</b><small>Estado de mis cambios</small></button>}</nav>}
+    {(canSeeRules || canSeeRequests) && <nav className="admin-tabs admin-tabs-compact" aria-label="Ayuda para la operación">{canSeeRules && <button className={currentSection === "reglas" ? "active" : ""} aria-current={currentSection === "reglas" ? "page" : undefined} onClick={() => setSection("reglas")}><b>Reglas del fondo</b><small>Condiciones vigentes</small></button>}{canSeeRequests && <button className={currentSection === "solicitudes" ? "active" : ""} aria-current={currentSection === "solicitudes" ? "page" : undefined} onClick={() => setSection("solicitudes")}><b>Mis solicitudes</b><small>Estado de mis cambios</small></button>}</nav>}
     {currentSection === "reglas" && canSeeRules ? <BusinessRulesPanel csrf={csrf} role="operador" embedded /> : canSeeRequests ? <ApprovalRequestsPanel csrf={csrf} role="operador" /> : <div className="empty-state">No hay secciones disponibles para este perfil.</div>}
   </div>;
 }
@@ -336,25 +336,31 @@ function AdminOverview({ go, setSection }: { go: (view: View) => void; setSectio
     { label: "Registrar el primer asociado", detail: summary.associates ? `${summary.associates} asociado${summary.associates === 1 ? "" : "s"} activo${summary.associates === 1 ? "" : "s"}` : summary.affiliations ? `${summary.affiliations} solicitud${summary.affiliations === 1 ? "" : "es"} pendiente${summary.affiliations === 1 ? "" : "s"}; apruébala para activar al asociado.` : "Registra a la persona para comenzar las operaciones del fondo.", ready: summary.associates > 0, required: true, action: () => go(summary.affiliations ? "afiliaciones" : "asociados"), link: summary.affiliations ? "Revisar afiliaciones" : "Registrar asociado" },
   ];
   const requiredSteps = setupSteps.filter((step) => step.required);
+  const optionalSteps = setupSteps.filter((step) => !step.required);
   const completedSetup = requiredSteps.filter((step) => step.ready).length;
+  const setupProgress = Math.round(completedSetup / requiredSteps.length * 100);
   const nextStep = requiredSteps.find((step) => !step.ready);
   return <div className="admin-overview">
+    <section className="admin-stat-grid" aria-label="Indicadores ejecutivos">
+      <AdminStat label="Asociados activos" value={loading || error ? "—" : String(summary.associates)} icon={Users} onClick={() => go("asociados")} />
+      <AdminStat label="Afiliaciones pendientes" value={loading || error ? "—" : String(summary.affiliations)} icon={ClipboardList} onClick={() => go("afiliaciones")} />
+      <AdminStat label="Cambios por revisar" value={loading || error ? "—" : String(summary.approvals)} icon={ShieldCheck} onClick={() => setSection("aprobaciones")} />
+      <AdminStat label="Cartera registrada" value={loading || error ? "—" : money(summary.receivables)} icon={Banknote} onClick={() => go("cartera")} />
+      <AdminStat label="Pagos aplicados" value={loading || error ? "—" : money(summary.payments)} icon={CreditCard} onClick={() => go("pagos")} />
+      <AdminStat label="Supervisores activos" value={loading || error ? "—" : String(summary.operators)} icon={Users} onClick={() => setSection("usuarios")} />
+    </section>
     <section className={`admin-welcome ${summary.associates || summary.affiliations ? "has-data" : "is-empty"}`}>
-      <div><p>CONFIGURACIÓN INICIAL</p><h2>{loading ? "Consultando el sistema…" : error ? "No pudimos leer la configuración" : nextStep ? "Completa la preparación básica" : "El fondo está listo para operar"}</h2><small>{loading ? "Estamos leyendo el estado guardado." : error ? "Revisa la conexión e inténtalo de nuevo para ver el estado real." : `Preparación básica: ${completedSetup} de ${requiredSteps.length} pasos. Los datos operativos empiezan en cero; empresa de libranza y tasa de mora se configuran cuando se necesiten.`}</small></div>
+      <div className="admin-welcome-copy"><p>ESTADO DE PREPARACIÓN</p><h2>{loading ? "Consultando el sistema…" : error ? "No pudimos leer la configuración" : nextStep ? "Completa la preparación básica" : "El fondo está listo para operar"}</h2><small>{loading ? "Estamos leyendo el estado guardado." : error ? "Revisa la conexión e inténtalo de nuevo para ver el estado real." : nextStep ? "Completa los pasos esenciales para que el equipo pueda comenzar." : "Los accesos y datos esenciales están configurados. La actividad del fondo se actualizará aquí."}</small></div>
+      {!loading && !error && <div className="admin-readiness" aria-label={`Preparación básica: ${completedSetup} de ${requiredSteps.length} pasos`}><div><b>{completedSetup}<span>/{requiredSteps.length}</span></b><small>pasos esenciales</small></div><div className="admin-progress-track" role="progressbar" aria-valuenow={setupProgress} aria-valuemin={0} aria-valuemax={100} aria-label="Preparación del fondo"><i style={{ width: `${setupProgress}%` }} /></div></div>}
       {nextStep && <Button className="violet-button" disabled={loading || Boolean(error)} onClick={nextStep.action}><ArrowUpRight />{nextStep.link}</Button>}
     </section>
     {error && <div className="auth-error flex items-center justify-between gap-3" role="alert"><span>{error}</span><Button variant="outline" onClick={() => { setLoading(true); setRetry((value) => value + 1); }}>Reintentar</Button></div>}
-    <section className="admin-stat-grid" aria-label="Indicadores del sistema">
-      <AdminStat label="Asociados activos" value={loading || error ? "—" : String(summary.associates)} icon={Users} onClick={() => go("asociados")} />
-      <AdminStat label="Afiliaciones por revisar" value={loading || error ? "—" : String(summary.affiliations)} icon={ClipboardList} onClick={() => go("afiliaciones")} />
-      <AdminStat label="Cambios pendientes" value={loading || error ? "—" : String(summary.approvals)} icon={ShieldCheck} onClick={() => setSection("aprobaciones")} />
-      <AdminStat label="Cartera registrada" value={loading || error ? "—" : money(summary.receivables)} icon={Banknote} onClick={() => go("cartera")} />
-    </section>
     <section className="admin-next-steps">
-      <div className="admin-panel-heading"><div><p>PRIMEROS PASOS</p><h2>Deja el espacio listo para el equipo</h2></div><small>{loading ? "Consultando estado…" : error ? "Estado no disponible" : `${completedSetup}/${requiredSteps.length} pasos básicos · ${summary.companies} empresas disponibles`}</small></div>
+      <div className="admin-panel-heading"><div><p>PRIMEROS PASOS</p><h2>Deja el espacio listo para el equipo</h2></div><small>{loading ? "Consultando estado…" : error ? "Estado no disponible" : `${completedSetup}/${requiredSteps.length} pasos esenciales`}</small></div>
       <div className="admin-step-grid">
-        {setupSteps.map((step, index) => <button key={step.label} disabled={loading || Boolean(error)} onClick={step.action} aria-label={`${step.ready ? "Completado" : step.required ? "Pendiente" : "Opcional"}: ${step.label}`}><span>{step.ready ? <Check /> : String(index + 1).padStart(2, "0")}</span><b>{step.label}</b><small>{step.detail}</small><em>{step.ready ? "Listo · revisar" : step.required ? step.link : `Opcional · ${step.link}`} <ChevronRight /></em></button>)}
+        {requiredSteps.map((step, index) => <button key={step.label} className={step.ready ? "is-complete" : "is-next"} disabled={loading || Boolean(error)} onClick={step.action} aria-label={`${step.ready ? "Completado" : "Pendiente"}: ${step.label}`}><span>{step.ready ? <Check /> : String(index + 1).padStart(2, "0")}</span><b>{step.label}</b><small>{step.detail}</small><em>{step.ready ? "Completado · revisar" : step.link} <ChevronRight /></em></button>)}
       </div>
+      {optionalSteps.length > 0 && <details className="admin-optional-setup"><summary>Configuración según necesidad <small>{optionalSteps.filter((step) => step.ready).length} de {optionalSteps.length} listas</small></summary><div className="admin-step-grid">{optionalSteps.map((step) => <button key={step.label} className={step.ready ? "is-complete" : "is-optional"} disabled={loading || Boolean(error)} onClick={step.action} aria-label={`${step.ready ? "Completado" : "Opcional"}: ${step.label}`}><span>{step.ready ? <Check /> : <ChevronRight />}</span><b>{step.label}</b><small>{step.detail}</small><em>{step.ready ? "Configurado" : step.link} <ChevronRight /></em></button>)}</div></details>}
     </section>
     <section className="admin-quick-links"><button onClick={() => setSection("aprobaciones")}><ClipboardList /><span><b>Revisar solicitudes</b><small>{summary.approvals ? `${summary.approvals} esperan tu decisión` : "No hay cambios pendientes"}</small></span><ChevronRight /></button><button onClick={() => setSection("organizacion")}><Building2 /><span><b>Datos del fondo</b><small>Nombre, NIT y correo institucional</small></span><ChevronRight /></button><button onClick={() => go("reportes")}><FileText /><span><b>Consultar reportes</b><small>Ver registros guardados por módulo</small></span><ChevronRight /></button></section>
   </div>;
