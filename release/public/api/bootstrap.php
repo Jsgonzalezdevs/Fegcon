@@ -44,6 +44,7 @@ function db(): PDO {
     $pdo->exec("CREATE TABLE IF NOT EXISTS savings_transactions (id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY, associate_id INT UNSIGNED NOT NULL, product_id INT UNSIGNED NOT NULL, movement_type ENUM('aporte','retiro') NOT NULL, amount DECIMAL(14,2) NOT NULL, status ENUM('pendiente','aplicado','anulado') NOT NULL DEFAULT 'aplicado', reference VARCHAR(100) NULL, recorded_by INT UNSIGNED NOT NULL, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (associate_id) REFERENCES associates(id), FOREIGN KEY (product_id) REFERENCES financial_products(id), FOREIGN KEY (recorded_by) REFERENCES internal_users(id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
     $pdo->exec("CREATE TABLE IF NOT EXISTS credit_applications (id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY, associate_id INT UNSIGNED NOT NULL, product_id INT UNSIGNED NOT NULL, requested_amount DECIMAL(14,2) NOT NULL, requested_term_months INT UNSIGNED NOT NULL, purpose VARCHAR(255) NULL, status ENUM('borrador','en_revision','aprobada','rechazada','desembolsada') NOT NULL DEFAULT 'en_revision', created_by INT UNSIGNED NOT NULL, reviewed_by INT UNSIGNED NULL, reviewed_at TIMESTAMP NULL, decision_note VARCHAR(255) NULL, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (associate_id) REFERENCES associates(id), FOREIGN KEY (product_id) REFERENCES financial_products(id), FOREIGN KEY (created_by) REFERENCES internal_users(id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
     try { $pdo->exec('ALTER TABLE credit_applications ADD COLUMN reviewed_by INT UNSIGNED NULL, ADD COLUMN reviewed_at TIMESTAMP NULL, ADD COLUMN decision_note VARCHAR(255) NULL'); } catch (Throwable $ignored) {}
+    try { $pdo->exec('ALTER TABLE credit_applications ADD COLUMN approved_multiplier TINYINT UNSIGNED NULL, ADD COLUMN monthly_installment DECIMAL(14,2) NULL'); } catch (Throwable $ignored) {}
     $pdo->exec("CREATE TABLE IF NOT EXISTS affiliation_requests (id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY, document_number VARCHAR(50) NOT NULL UNIQUE, first_name VARCHAR(100) NOT NULL, last_name VARCHAR(100) NOT NULL, email VARCHAR(190) NULL, phone VARCHAR(50) NULL, company_name VARCHAR(190) NULL, documents_status ENUM('pendientes','completos') NOT NULL DEFAULT 'pendientes', status ENUM('en_revision','aprobada','rechazada') NOT NULL DEFAULT 'en_revision', created_by INT UNSIGNED NOT NULL, reviewed_by INT UNSIGNED NULL, reviewed_at TIMESTAMP NULL, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (created_by) REFERENCES internal_users(id), FOREIGN KEY (reviewed_by) REFERENCES internal_users(id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
     $pdo->exec("CREATE TABLE IF NOT EXISTS configuration_catalog (id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY, category VARCHAR(80) NOT NULL, label VARCHAR(190) NOT NULL, payload LONGTEXT NOT NULL, active TINYINT(1) NOT NULL DEFAULT 1, created_by INT UNSIGNED NULL, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, UNIQUE KEY category_label (category,label)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
     $pdo->exec("CREATE TABLE IF NOT EXISTS payments (id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY, associate_id INT UNSIGNED NOT NULL, payment_method_id INT UNSIGNED NULL, concept VARCHAR(150) NOT NULL, amount DECIMAL(14,2) NOT NULL, reference VARCHAR(100) NULL, status ENUM('pendiente','aplicado','anulado') NOT NULL DEFAULT 'aplicado', received_on DATE NOT NULL, recorded_by INT UNSIGNED NOT NULL, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (associate_id) REFERENCES associates(id), FOREIGN KEY (payment_method_id) REFERENCES configuration_catalog(id), FOREIGN KEY (recorded_by) REFERENCES internal_users(id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
@@ -102,6 +103,15 @@ function require_core_product(PDO $db, int $productId, string $type): void {
     if (!$stmt->fetchColumn()) throw new RuntimeException('El producto no corresponde a las reglas vigentes de FEGCON.');
 }
 
+function active_savings_balance(PDO $db, int $associateId, bool $lockAssociate = false): float {
+    $associate = $db->prepare('SELECT id FROM associates WHERE id=? AND status="activo"' . ($lockAssociate ? ' FOR UPDATE' : ''));
+    $associate->execute([$associateId]);
+    if (!$associate->fetchColumn()) throw new RuntimeException('El asociado no existe o no está activo.');
+    $balance = $db->prepare("SELECT COALESCE(SUM(CASE WHEN movement_type='aporte' THEN amount ELSE -amount END),0) FROM savings_transactions WHERE associate_id=? AND status='aplicado'");
+    $balance->execute([$associateId]);
+    return max(0, (float) $balance->fetchColumn());
+}
+
 function verify_csrf(): void {
     start_session();
     $token = $_SERVER['HTTP_X_CSRF_TOKEN'] ?? '';
@@ -134,17 +144,22 @@ function apply_approved_change(PDO $db, int $requesterId, int $reviewerId, strin
             $associate = (int) ($v['associate_id'] ?? 0); $product = (int) ($v['product_id'] ?? 0); $amount = (float) ($v['amount'] ?? 0); $type = clean($v['movement_type'] ?? '');
             if (!$associate || !$product || $amount <= 0 || !in_array($type, ['aporte','retiro'], true)) throw new RuntimeException('Movimiento de ahorro inválido.');
             require_core_product($db, $product, 'ahorro');
+            $balance = active_savings_balance($db, $associate, true);
+            if ($type === 'retiro' && $amount > $balance) throw new RuntimeException('El retiro supera el saldo de ahorro disponible.');
             $q = $db->prepare('INSERT INTO savings_transactions(associate_id,product_id,movement_type,amount,reference,recorded_by) VALUES(?,?,?,?,?,?)'); $q->execute([$associate,$product,$type,$amount,substr(clean($v['reference'] ?? ''),0,100),$requesterId]);
             $id = (int) $db->lastInsertId(); audit($db,$reviewerId,'ahorro',$id,'registrar_aprobado',$type); return ['entity'=>'ahorro','id'=>$id];
         case 'credit_application':
             $associate = (int) ($v['associate_id'] ?? 0); $product = (int) ($v['product_id'] ?? 0); $amount = (float) ($v['amount'] ?? 0); $term = (int) ($v['term_months'] ?? 0);
             if (!$associate || !$product || $amount <= 0 || $term < 1 || $term > 60) throw new RuntimeException('Solicitud de crédito inválida.');
             require_core_product($db, $product, 'credito');
+            $balance = active_savings_balance($db, $associate, true);
+            if ($amount > $balance * .70 * 5) throw new RuntimeException('El monto solicitado supera el cupo máximo de cinco veces el 70% de los aportes.');
             $q = $db->prepare('INSERT INTO credit_applications(associate_id,product_id,requested_amount,requested_term_months,purpose,created_by) VALUES(?,?,?,?,?,?)'); $q->execute([$associate,$product,$amount,$term,substr(clean($v['purpose'] ?? ''),0,255),$requesterId]);
             $id = (int) $db->lastInsertId(); audit($db,$reviewerId,'credito',$id,'solicitar_aprobado','Solicitud'); return ['entity'=>'credito','id'=>$id];
         case 'credit_decision':
             $id=(int)($v['id']??0); $status=clean($v['status']??''); if (!$id || !in_array($status,['aprobada','rechazada'],true)) throw new RuntimeException('Decisión de crédito inválida.');
-            $q=$db->prepare('UPDATE credit_applications SET status=?,reviewed_by=?,reviewed_at=NOW(),decision_note=? WHERE id=? AND status="en_revision"');$q->execute([$status,$reviewerId,substr(clean($v['note']??''),0,255),$id]);if(!$q->rowCount())throw new RuntimeException('La solicitud ya fue procesada.');
+            $q=$db->prepare('SELECT associate_id,requested_amount,requested_term_months FROM credit_applications WHERE id=? AND status="en_revision"');$q->execute([$id]);$application=$q->fetch();if(!$application)throw new RuntimeException('La solicitud ya fue procesada.');$multiplier=(int)($v['multiplier']??0);$monthly=null;if($status==='aprobada'){if(!in_array($multiplier,[3,4,5],true))throw new RuntimeException('Selecciona el cupo aprobado: 3, 4 o 5 veces los aportes.');$balance=$db->prepare("SELECT COALESCE(SUM(CASE WHEN movement_type='aporte' THEN amount ELSE -amount END),0) FROM savings_transactions WHERE associate_id=? AND status='aplicado'");$balance->execute([(int)$application['associate_id']]);$base=max(0,(float)$balance->fetchColumn())*.70;if((float)$application['requested_amount']>$base*$multiplier)throw new RuntimeException('El monto solicitado supera el cupo del multiplicador elegido.');$term=(int)$application['requested_term_months'];$principal=(float)$application['requested_amount'];$monthly=$principal*.02/(1-pow(1.02,-$term));}
+            $q=$db->prepare('UPDATE credit_applications SET status=?,reviewed_by=?,reviewed_at=NOW(),decision_note=?,approved_multiplier=?,monthly_installment=? WHERE id=? AND status="en_revision"');$q->execute([$status,$reviewerId,substr(clean($v['note']??''),0,255),$status==='aprobada'?$multiplier:null,$monthly,$id]);if(!$q->rowCount())throw new RuntimeException('La solicitud ya fue procesada.');
             audit($db,$reviewerId,'credito',$id,$status,'Decisión aprobada'); return ['entity'=>'credito','id'=>$id];
         case 'affiliation_create':
             $doc=substr(clean($v['document_number']??''),0,50);$first=substr(clean($v['first_name']??''),0,100);$last=substr(clean($v['last_name']??''),0,100);if(!$doc||!$first||!$last)throw new RuntimeException('Datos de afiliación incompletos.');
