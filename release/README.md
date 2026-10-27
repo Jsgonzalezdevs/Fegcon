@@ -16,13 +16,12 @@ El paquete queda en `release/`. El script copia la interfaz, la API PHP, `.htacc
 
 ## Instalar en el hosting
 
-1. En cPanel, crea una base de datos MySQL y un usuario con todos los permisos sobre esa base.
+1. En cPanel, crea una base de datos MySQL vacía y un usuario con todos los permisos sobre esa base. Para iniciar sin registros anteriores, no reutilices una base que ya contenga operación.
 2. Importa `release/database/001_core.sql` desde phpMyAdmin.
 3. Sube el contenido de `release/public/` a la raíz del subdominio del administrador. Deben quedar juntos `index.html`, `.htaccess`, `setup.php`, la carpeta `assets/` y la carpeta `api/`.
-4. Abre `api/config.php` en el hosting y completa el nombre de base de datos, el usuario y la contraseña de MySQL. Protege ese archivo y no lo publiques en GitHub.
-5. Visita `https://TU-SUBDOMINIO/setup.php`, crea la primera cuenta Superadmin y guarda su contraseña en un gestor seguro.
-6. Elimina `setup.php` desde el Administrador de archivos de cPanel después de crear la cuenta.
-7. Inicia sesión y verifica que asociados, afiliaciones, movimientos, créditos, cartera, pagos, pagarés y cobros estén vacíos. Los productos y las reglas base de FEGCON se inicializan automáticamente al conectar la API.
+4. Visita la ruta `setup.php`, ingresa las credenciales MySQL y crea la cuenta Superadmin. El instalador guarda la conexión en un archivo privado fuera de `public_html`; no hay que crear `api/config.php`.
+5. Guarda la contraseña Superadmin en un gestor seguro y elimina `setup.php` desde el Administrador de archivos de cPanel.
+6. Inicia sesión y confirma que asociados, afiliaciones, movimientos, créditos, cartera, pagos, pagarés y cobros estén vacíos. Los productos y las reglas base de FEGCON se inicializan automáticamente al conectar la API.
 
 Una instalación nueva no carga ejemplos. Solo se crean los productos institucionales: aportes (30% a la vista y 70% aportes) y libre inversión (2% mensual sobre saldo pendiente, plazo de 1 a 60 meses).
 
@@ -34,6 +33,6 @@ Al cargar el primer escaneo, la API crea `fegcon-private-documents` en la carpet
 
 ## Actualización de una instalación existente
 
-Prepara el mismo paquete y reemplaza los archivos de la raíz del subdominio con el contenido de `release/public/`. Conserva `api/config.php` y la base de datos actuales. Revisa el estado de los registros antes del cambio: esta actualización no borra datos existentes. Para vaciar una base con datos de prueba, primero exporta una copia y elimina únicamente los registros que se hayan identificado como pruebas.
+Prepara el mismo paquete y reemplaza los archivos de la raíz del subdominio con el contenido de `release/public/`. Conserva la configuración privada y la base de datos actuales: actualizar el código no borra registros. Si necesitas empezar en cero, crea una base MySQL nueva, importa el SQL y ejecuta el instalador con esa base después de respaldar la configuración anterior. No reutilices la base operativa ni borres tablas sin identificar antes cada registro y su historial.
 
 No subas copias de pagarés, documentos de asociados, contraseñas ni archivos de configuración con secretos al repositorio o al paquete público.

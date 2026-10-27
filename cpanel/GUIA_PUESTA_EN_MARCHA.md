@@ -40,5 +40,9 @@ Antes de operar, la Superadmin debe configurar:
 ## Estado de módulos
 
 - Las solicitudes del Operador se aplican solo después de la aprobación de la Superadmin.
-- La aplicación aún no incluye carga y almacenamiento privado de los escaneos de pagarés; solo conserva registros de pagarés.
-- El envío automático de WhatsApp y la conciliación detallada de nómina requieren una integración operativa posterior.
+- La instalación parte sin asociados, saldos, solicitudes, pagos, pagarés ni relaciones de cobro de ejemplo. El primer inicio muestra ceros y estados vacíos hasta ingresar datos reales.
+- Los documentos del pagaré se guardan fuera de la carpeta pública y su descarga requiere una sesión autorizada. FEGCON aún debe definir los nombres oficiales de los aproximadamente siete documentos.
+- Nómina permite preparar la relación por empresa para el día 10 o 20, agregar los conceptos reales por asociado, descargar un CSV y registrar el recaudo por línea. El valor por aporte, convenio y período se ingresa explícitamente porque FEGCON no definió una tarifa fija ni cómo dividir una cuota mensual entre quincenas.
+- El sistema no envía WhatsApp automáticamente. El envío al asociado y a la empresa se realiza por los canales actuales; el CSV sirve para preparar la relación de libranza.
+- La tasa de usura debe cargarse por período antes de estimar intereses de mora. Sin tasa registrada, el sistema no presenta una mora calculada.
+- Actualizar los archivos del sitio conserva los registros de la base instalada. Para empezar con una base vacía se debe instalar sobre una base MySQL nueva; el instalador no elimina datos existentes.

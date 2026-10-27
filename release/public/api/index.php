@@ -112,7 +112,7 @@ if ($action === 'approval-requests' && $method === 'PATCH') {
 if ($action === 'associates' && $method === 'GET') {
     require_user();
     $q = '%' . clean($_GET['q'] ?? '') . '%';
-    $stmt = $db->prepare('SELECT a.id, a.document_type, a.document_number, a.first_name, a.last_name, a.email, a.phone, a.status, a.created_at, c.name AS company FROM associates a LEFT JOIN companies c ON c.id = a.company_id WHERE a.first_name LIKE ? OR a.last_name LIKE ? OR a.document_number LIKE ? ORDER BY a.created_at DESC LIMIT 100');
+    $stmt = $db->prepare('SELECT a.id, a.document_type, a.document_number, a.first_name, a.last_name, a.email, a.phone, a.company_id, a.status, a.created_at, c.name AS company FROM associates a LEFT JOIN companies c ON c.id = a.company_id WHERE a.first_name LIKE ? OR a.last_name LIKE ? OR a.document_number LIKE ? ORDER BY a.created_at DESC LIMIT 100');
     $stmt->execute([$q, $q, $q]);
     json_response(['associates' => $stmt->fetchAll()]);
 }
@@ -270,8 +270,50 @@ if ($action === 'catalog' && $method === 'GET') { $user=require_user();$category
 if ($action === 'catalog' && $method === 'POST') { $v=body();$category=substr(clean($v['category']??''),0,80);$user=$category==='convenio'?require_user(['superadmin','operador']):require_user(['superadmin']);verify_csrf();$label=substr(clean($v['label']??''),0,190);$allowed=['documento_afiliacion','periodo_cobro','medio_pago','flujo_aprobacion','rol_operativo','plantilla_documento','convenio'];if(!$category||!$label||!in_array($category,$allowed,true))json_response(['error'=>'Categoría o nombre inválido.'],422);queue_operator_change($db,$user,'catalog_item_create','Crear convenio '.$label,$v);$q=$db->prepare('INSERT INTO configuration_catalog(category,label,payload,created_by) VALUES (?,?,?,?)');try{$payload=is_array($v['payload']??null)?$v['payload']:[];$q->execute([$category,$label,json_encode($payload,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR),$user['id']]);audit($db,$user['id'],'catalogo',(int)$db->lastInsertId(),'crear',$category);json_response(['ok'=>true],201);}catch(Throwable $e){json_response(['error'=>'Ya existe un elemento con ese nombre.'],422);}}
 if ($action === 'payments' && $method === 'GET') { require_user();$rows=$db->query('SELECT p.*,a.first_name,a.last_name,c.label AS payment_method FROM payments p JOIN associates a ON a.id=p.associate_id LEFT JOIN configuration_catalog c ON c.id=p.payment_method_id ORDER BY p.received_on DESC,p.id DESC LIMIT 100')->fetchAll();json_response(['payments'=>$rows]); }
 if ($action === 'payments' && $method === 'POST') { $user=require_user(['superadmin','operador']);verify_csrf();$v=body();$a=(int)($v['associate_id']??0);$amount=(float)($v['amount']??0);$concept=substr(clean($v['concept']??''),0,150);if(!$a||$amount<=0||!$concept)json_response(['error'=>'Completa asociado, concepto y valor.'],422);queue_operator_change($db,$user,'payment_create','Registrar pago ' . $concept,$v);$q=$db->prepare('INSERT INTO payments(associate_id,payment_method_id,concept,amount,reference,received_on,recorded_by)VALUES(?,?,?,?,?,?,?)');$q->execute([$a,(int)($v['payment_method_id']??0)?:null,$concept,$amount,substr(clean($v['reference']??''),0,100),clean($v['received_on']??'')?:date('Y-m-d'),$user['id']]);audit($db,$user['id'],'pago',(int)$db->lastInsertId(),'registrar',$concept);json_response(['ok'=>true],201); }
-if ($action === 'payroll-collections' && $method === 'GET') { require_user();json_response(['collections'=>$db->query('SELECT * FROM payroll_collections ORDER BY created_at DESC LIMIT 100')->fetchAll()]); }
-if ($action === 'payroll-collections' && $method === 'POST') { $u=require_user(['superadmin','operador']);verify_csrf();$v=body();$period=substr(clean($v['period_label']??''),0,100);if(!$period)json_response(['error'=>'El período es obligatorio.'],422);queue_operator_change($db,$u,'payroll_collection_create','Crear cobro de nómina ' . $period,$v);$q=$db->prepare('INSERT INTO payroll_collections(period_label,expected_amount,created_by)VALUES(?,?,?)');$q->execute([$period,max(0,(float)($v['expected_amount']??0)),$u['id']]);audit($db,$u['id'],'cobro_nomina',(int)$db->lastInsertId(),'crear',$period);json_response(['ok'=>true],201); }
+if ($action === 'companies' && $method === 'GET') { require_user();json_response(['companies'=>$db->query('SELECT id,name FROM companies WHERE active=1 ORDER BY name')->fetchAll()]); }
+if ($action === 'payroll-collections' && $method === 'GET') {
+    require_user();
+    $rows=$db->query('SELECT p.*,c.name AS company_name,(SELECT COUNT(*) FROM payroll_collection_items i WHERE i.payroll_collection_id=p.id AND i.status<>"anulado") AS item_count FROM payroll_collections p LEFT JOIN companies c ON c.id=p.company_id ORDER BY p.collection_date DESC,p.id DESC LIMIT 100')->fetchAll();
+    json_response(['collections'=>$rows]);
+}
+if ($action === 'payroll-collections' && $method === 'POST') {
+    $current=require_user(['superadmin','operador']);verify_csrf();$payload=body();$company=(int)($payload['company_id']??0);$date=clean($payload['collection_date']??'');$parsed=DateTimeImmutable::createFromFormat('!Y-m-d',$date);$validDate=$parsed&&$parsed->format('Y-m-d')===$date;
+    if(!$company||!$validDate||!in_array((int)$parsed->format('d'),[10,20],true))json_response(['error'=>'Selecciona una empresa y una fecha de cobro que sea día 10 o 20.'],422);
+    queue_operator_change($db,$current,'payroll_collection_create','Crear relación de nómina '.$date,$payload);
+    try{$db->beginTransaction();$result=apply_approved_change($db,$current['id'],$current['id'],'payroll_collection_create',$payload);$db->commit();json_response(['ok'=>true,'id'=>$result['id'],'message'=>'Relación creada en borrador.']);}
+    catch(Throwable $error){if($db->inTransaction())$db->rollBack();json_response(['error'=>$error instanceof RuntimeException?$error->getMessage():'No fue posible crear la relación.'],422);}
+}
+if ($action === 'payroll-items' && $method === 'GET') {
+    require_user();$collection=(int)($_GET['collection_id']??0);if(!$collection)json_response(['error'=>'Selecciona una relación de nómina.'],422);
+    $q=$db->prepare('SELECT i.*,a.first_name,a.last_name,a.document_number,ca.monthly_installment FROM payroll_collection_items i JOIN associates a ON a.id=i.associate_id LEFT JOIN credit_applications ca ON ca.id=i.credit_application_id WHERE i.payroll_collection_id=? ORDER BY a.last_name,a.first_name,i.id');$q->execute([$collection]);json_response(['items'=>$q->fetchAll()]);
+}
+if ($action === 'payroll-items' && $method === 'POST') {
+    $current=require_user(['superadmin','operador']);verify_csrf();$payload=body();$collection=(int)($payload['payroll_collection_id']??0);$associate=(int)($payload['associate_id']??0);$type=clean($payload['charge_type']??'');$amount=(float)($payload['amount']??0);$reference=clean($payload['reference']??'');
+    if(!$collection||!$associate||!in_array($type,['aporte','cuota_credito','convenio'],true)||$amount<=0||$reference==='')json_response(['error'=>'Completa asociado, tipo de cobro, concepto y valor.'],422);
+    queue_operator_change($db,$current,'payroll_item_create','Agregar concepto a relación de nómina',$payload);
+    try{$db->beginTransaction();$result=apply_approved_change($db,$current['id'],$current['id'],'payroll_item_create',$payload);$db->commit();json_response(['ok'=>true,'id'=>$result['id']]);}
+    catch(Throwable $error){if($db->inTransaction())$db->rollBack();json_response(['error'=>$error instanceof RuntimeException?$error->getMessage():'No fue posible agregar el concepto.'],422);}
+}
+if ($action === 'payroll-items' && $method === 'DELETE') {
+    $current=require_user(['superadmin','operador']);verify_csrf();$payload=['id'=>(int)($_GET['id']??0)];if(!$payload['id'])json_response(['error'=>'Selecciona el concepto que deseas retirar.'],422);
+    queue_operator_change($db,$current,'payroll_item_void','Retirar concepto de relación de nómina',$payload);
+    try{$db->beginTransaction();apply_approved_change($db,$current['id'],$current['id'],'payroll_item_void',$payload);$db->commit();json_response(['ok'=>true]);}
+    catch(Throwable $error){if($db->inTransaction())$db->rollBack();json_response(['error'=>$error instanceof RuntimeException?$error->getMessage():'No fue posible retirar el concepto.'],422);}
+}
+if ($action === 'payroll-items' && $method === 'PATCH') {
+    $current=require_user(['superadmin','operador']);verify_csrf();$payload=body();$payload['id']=(int)($payload['id']??0);$payload['collected_amount']=$payload['collected_amount']??null;
+    if(!$payload['id']||!is_numeric($payload['collected_amount'])||(float)$payload['collected_amount']<0)json_response(['error'=>'Indica el valor recaudado para este concepto.'],422);
+    queue_operator_change($db,$current,'payroll_item_reconcile','Conciliar concepto de nómina',$payload);
+    try{$db->beginTransaction();apply_approved_change($db,$current['id'],$current['id'],'payroll_item_reconcile',$payload);$db->commit();json_response(['ok'=>true]);}
+    catch(Throwable $error){if($db->inTransaction())$db->rollBack();json_response(['error'=>$error instanceof RuntimeException?$error->getMessage():'No fue posible actualizar el recaudo.'],422);}
+}
+if ($action === 'payroll-collections' && $method === 'PATCH') {
+    $current=require_user(['superadmin','operador']);verify_csrf();$payload=body();$payload['id']=(int)($payload['id']??0);$payload['status']=clean($payload['status']??'');
+    if(!$payload['id']||!in_array($payload['status'],['enviado','recibido','conciliado'],true))json_response(['error'=>'Selecciona la siguiente etapa de la relación.'],422);
+    queue_operator_change($db,$current,'payroll_collection_status','Cambiar estado de relación de nómina',$payload);
+    try{$db->beginTransaction();apply_approved_change($db,$current['id'],$current['id'],'payroll_collection_status',$payload);$db->commit();json_response(['ok'=>true]);}
+    catch(Throwable $error){if($db->inTransaction())$db->rollBack();json_response(['error'=>$error instanceof RuntimeException?$error->getMessage():'No fue posible cambiar el estado.'],422);}
+}
 if ($action === 'promissory-documents' && $method === 'GET') {
     $current=require_user();$noteId=(int)($_GET['note_id']??0);if(!$noteId)json_response(['error'=>'Selecciona un pagaré.'],422);
     $condition=$current['role']==='superadmin'?'status<>"retirado"':'status="custodiado"';$q=$db->prepare('SELECT id,promissory_note_id,label,original_name,mime_type,byte_size,status,created_at,reviewed_at FROM promissory_documents WHERE promissory_note_id=? AND '.$condition.' ORDER BY created_at DESC');$q->execute([$noteId]);json_response(['documents'=>$q->fetchAll()]);
