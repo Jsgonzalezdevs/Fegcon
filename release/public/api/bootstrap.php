@@ -125,10 +125,10 @@ function apply_approved_change(PDO $db, int $requesterId, int $reviewerId, strin
                 $q = $db->prepare('SELECT id FROM companies WHERE name=? LIMIT 1'); $q->execute([$companyName]); $companyId = $q->fetchColumn();
                 if (!$companyId) { $q = $db->prepare('INSERT INTO companies(name) VALUES (?)'); $q->execute([$companyName]); $companyId = (int) $db->lastInsertId(); }
             }
-            $q = $db->prepare('INSERT INTO associates(document_type,document_number,first_name,last_name,email,phone,company_id,status) VALUES(?,?,?,?,?,?,?,"pendiente")');
+            $q = $db->prepare('INSERT INTO associates(document_type,document_number,first_name,last_name,email,phone,company_id,status) VALUES(?,?,?,?,?,?,?,"activo")');
             $q->execute([clean($v['documentType'] ?? '') ?: 'CC', $document, $first, $last, clean($v['email'] ?? '') ?: null, clean($v['phone'] ?? '') ?: null, $companyId ?: null]);
             $id = (int) $db->lastInsertId();
-            $q = $db->prepare('INSERT INTO associate_events(associate_id,event_type,title,description,created_by) VALUES (?,"registro","Registro creado","El asociado fue registrado con estado pendiente.",?)'); $q->execute([$id, $requesterId]);
+            $q = $db->prepare('INSERT INTO associate_events(associate_id,event_type,title,description,created_by) VALUES (?,"registro","Registro aprobado","El registro fue revisado y aprobado por la Superadmin.",?)'); $q->execute([$id, $reviewerId]);
             audit($db, $reviewerId, 'asociado', $id, 'crear_aprobado', $document); return ['entity' => 'asociado', 'id' => $id];
         case 'savings_transaction':
             $associate = (int) ($v['associate_id'] ?? 0); $product = (int) ($v['product_id'] ?? 0); $amount = (float) ($v['amount'] ?? 0); $type = clean($v['movement_type'] ?? '');
