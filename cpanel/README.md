@@ -11,4 +11,4 @@ Este paquete usa MySQL y PHP del hosting. No requiere Node.js, Composer ni servi
 
 Nunca suba ni deje dentro de `public_html` el archivo `.fegcon-admin.php`: el instalador lo crea dos niveles por encima del directorio público. Guarde la contraseña de MySQL y del administrador en un gestor de contraseñas.
 
-La primera entrega habilita inicio de sesión, roles, creación y consulta de asociados, auditoría y la base para extender créditos, ahorros, pagos y documentos.
+La instalación crea una cuenta Superadmin única. Las demás cuentas son Operadores: toda escritura operativa que pueden iniciar queda pendiente de aprobación. Las reglas financieras quedan cerradas para el Operador.

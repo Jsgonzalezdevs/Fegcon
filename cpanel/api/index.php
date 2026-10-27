@@ -47,6 +47,62 @@ if ($action === 'me' && $method === 'GET') {
     json_response(['user' => $current, 'csrf' => $_SESSION['csrf'] ?? '']);
 }
 
+if ($action === 'business-rules' && $method === 'GET') {
+    require_user();
+    $rates = $db->query('SELECT effective_month,rate_percent FROM monthly_usury_rates ORDER BY effective_month DESC')->fetchAll();
+    $currentMonth = (new DateTimeImmutable('now', new DateTimeZone('America/Bogota')))->format('Y-m'); $currentRate = null;
+    foreach ($rates as $rateRow) if ($rateRow['effective_month'] === $currentMonth) { $currentRate = (float) $rateRow['rate_percent']; break; }
+    json_response(['rules' => [
+        'savings' => ['at_sight_percent' => 30, 'contributions_percent' => 70, 'at_sight_availability' => 'inmediata', 'credit_base' => 'aportes'],
+        'credit' => ['product' => 'Libre inversión', 'fixed_monthly_rate_percent' => 2, 'interest_basis' => 'saldo pendiente', 'min_term_months' => 1, 'max_term_months' => 60, 'credit_multiplier_options' => [3,4,5], 'multiplier_decision' => 'superadmin_por_solicitud', 'payroll_requirements' => ['dos últimos desprendibles de pago', 'certificación laboral'], 'independent_requirements' => ['declaración de renta', 'un codeudor o dos según monto']],
+        'late_interest' => ['formula' => 'capital_de_cuota × (tasa_de_usura_vigente ÷ 100) ÷ 360 × días_en_mora', 'day_basis' => 360, 'effective_month' => $currentMonth, 'usury_rate_percent' => $currentRate, 'history' => $rates],
+        'collections' => ['associate_frequency' => ['quincenal','mensual'], 'channels' => ['WhatsApp'], 'payroll_days' => [10,20], 'concepts' => ['aportes','cuotas de crédito','convenios']],
+        'documents' => ['approximate_count' => 7, 'custody' => 'FEGCON', 'storage' => 'carpeta digital por asociado', 'document_names_confirmed' => false],
+        'permissions' => ['roles' => ['superadmin','operador'], 'operator_writes_require_approval' => true],
+    ]]);
+}
+
+if ($action === 'business-rules' && $method === 'POST') {
+    $current = require_user(['superadmin']); verify_csrf(); $v = body();
+    $month = clean($v['effective_month'] ?? ''); $rate = $v['usury_rate_percent'] ?? null;
+    if (!preg_match('/^\\d{4}-(0[1-9]|1[0-2])$/', $month) || !is_numeric($rate) || (float) $rate <= 0 || (float) $rate > 100) json_response(['error' => 'Indica el mes y la tasa de usura vigente aplicable.'], 422);
+    $save = $db->prepare('INSERT INTO monthly_usury_rates(effective_month,rate_percent,updated_by) VALUES(?,?,?) ON DUPLICATE KEY UPDATE rate_percent=VALUES(rate_percent),updated_by=VALUES(updated_by)');
+    $save->execute([$month, (float) $rate, $current['id']]);
+    audit($db, $current['id'], 'regla_financiera', 0, 'actualizar', 'Tasa de usura vigente ' . $month);
+    json_response(['ok' => true]);
+}
+
+if ($action === 'approval-requests' && $method === 'GET') {
+    $current = require_user();
+    if ($current['role'] === 'superadmin') {
+        $rows = $db->query('SELECT r.id,r.operation,r.summary,r.payload_json,r.status,r.created_at,r.reviewed_at,u.full_name AS requested_by_name FROM approval_requests r JOIN internal_users u ON u.id=r.requested_by ORDER BY (r.status="pendiente") DESC,r.created_at DESC LIMIT 200')->fetchAll();
+    } else {
+        $q = $db->prepare('SELECT id,operation,summary,status,created_at,reviewed_at FROM approval_requests WHERE requested_by=? ORDER BY created_at DESC LIMIT 100'); $q->execute([$current['id']]); $rows = $q->fetchAll();
+    }
+    foreach ($rows as &$row) if (isset($row['payload_json'])) $row['payload'] = json_decode($row['payload_json'], true) ?: [];
+    json_response(['requests' => $rows]);
+}
+
+if ($action === 'approval-requests' && $method === 'PATCH') {
+    $current = require_user(['superadmin']); verify_csrf(); $v = body();
+    $id = (int) ($v['id'] ?? 0); $decision = clean($v['decision'] ?? '');
+    if (!$id || !in_array($decision, ['aprobada','rechazada'], true)) json_response(['error' => 'Decisión de aprobación inválida.'], 422);
+    try {
+        $db->beginTransaction();
+        $q = $db->prepare('SELECT * FROM approval_requests WHERE id=? FOR UPDATE'); $q->execute([$id]); $request = $q->fetch();
+        if (!$request || $request['status'] !== 'pendiente') throw new RuntimeException('La solicitud ya fue atendida.');
+        if ($decision === 'aprobada') {
+            $result = apply_approved_change($db, (int) $request['requested_by'], $current['id'], $request['operation'], json_decode($request['payload_json'], true) ?: []);
+        }
+        $q = $db->prepare('UPDATE approval_requests SET status=?,reviewed_by=?,reviewed_at=NOW() WHERE id=?'); $q->execute([$decision, $current['id'], $id]);
+        audit($db, $current['id'], 'solicitud_cambio', $id, $decision, $request['summary']);
+        $db->commit(); json_response(['ok' => true, 'message' => $decision === 'aprobada' ? 'Cambio aprobado y aplicado.' : 'Solicitud rechazada.']);
+    } catch (Throwable $error) {
+        if ($db->inTransaction()) $db->rollBack();
+        json_response(['error' => $error instanceof RuntimeException ? $error->getMessage() : 'No fue posible procesar la solicitud.'], 422);
+    }
+}
+
 if ($action === 'associates' && $method === 'GET') {
     require_user();
     $q = '%' . clean($_GET['q'] ?? '') . '%';
@@ -56,11 +112,12 @@ if ($action === 'associates' && $method === 'GET') {
 }
 
 if ($action === 'associates' && $method === 'POST') {
-    $current = require_user(['administrador', 'afiliaciones']);
+    $current = require_user(['superadmin', 'operador']);
     verify_csrf();
     $input = body();
     $first = clean($input['firstName'] ?? ''); $last = clean($input['lastName'] ?? ''); $document = clean($input['documentNumber'] ?? '');
     if (!$first || !$last || !$document) json_response(['error' => 'Nombres, apellidos y documento son obligatorios.'], 422);
+    queue_operator_change($db, $current, 'associate_create', 'Crear asociado ' . $document, $input);
     $companyName = clean($input['company'] ?? '');
     try {
         $db->beginTransaction();
@@ -85,7 +142,7 @@ if ($action === 'associates' && $method === 'POST') {
 }
 
 if ($action === 'settings' && $method === 'GET') {
-    require_user(['administrador']);
+    require_user(['superadmin']);
     $rows = $db->query('SELECT setting_key, setting_value FROM app_settings')->fetchAll();
     $settings = [];
     foreach ($rows as $row) $settings[$row['setting_key']] = json_decode($row['setting_value'], true);
@@ -93,7 +150,7 @@ if ($action === 'settings' && $method === 'GET') {
 }
 
 if ($action === 'settings' && $method === 'POST') {
-    $current = require_user(['administrador']); verify_csrf();
+    $current = require_user(['superadmin']); verify_csrf();
     $input = body();
     $organization = is_array($input['organization'] ?? null) ? $input['organization'] : [];
     $modules = is_array($input['modules'] ?? null) ? $input['modules'] : [];
@@ -109,9 +166,9 @@ if ($action === 'settings' && $method === 'POST') {
 }
 
 if ($action === 'products' && $method === 'GET') {
-    require_user(['administrador']);
+    require_user();
     $type = clean($_GET['type'] ?? '');
-    $stmt = $db->prepare('SELECT id, product_type, name, code, parameters_json, active FROM financial_products WHERE (? = "" OR product_type = ?) ORDER BY product_type, name');
+    $stmt = $db->prepare('SELECT id, product_type, name, code, parameters_json, active FROM financial_products WHERE (? = "" OR product_type = ?) AND code IN ("APORTES-FEGCON","LIBRE-INVERSION") ORDER BY product_type, name');
     $stmt->execute([$type, $type]);
     $products = $stmt->fetchAll();
     foreach ($products as &$product) $product['parameters'] = json_decode($product['parameters_json'], true) ?: [];
@@ -119,10 +176,11 @@ if ($action === 'products' && $method === 'GET') {
 }
 
 if ($action === 'products' && $method === 'POST') {
-    $current = require_user(['administrador']); verify_csrf(); $input = body();
+    $current = require_user(['superadmin']); verify_csrf(); $input = body();
     $type = clean($input['type'] ?? ''); $name = substr(clean($input['name'] ?? ''), 0, 150); $code = strtoupper(substr(clean($input['code'] ?? ''), 0, 40));
-    if (!in_array($type, ['ahorro', 'credito'], true) || !$name || !$code) json_response(['error' => 'Tipo, nombre y código son obligatorios.'], 422);
-    $parameters = is_array($input['parameters'] ?? null) ? $input['parameters'] : [];
+    $canonical = ['ahorro' => ['name' => 'Aportes FEGCON', 'code' => 'APORTES-FEGCON'], 'credito' => ['name' => 'Libre inversión', 'code' => 'LIBRE-INVERSION']];
+    if (!isset($canonical[$type]) || $name !== $canonical[$type]['name'] || $code !== $canonical[$type]['code']) json_response(['error' => 'FEGCON tiene una única línea de libre inversión y un único producto de aportes.'], 422);
+    $parameters = $type === 'ahorro' ? ['ahorros_a_la_vista_pct' => 30, 'aportes_pct' => 70, 'disponibilidad' => 'inmediata'] : ['tasa_fija_mensual_pct' => 2, 'base_interes' => 'saldo_pendiente', 'plazo_minimo_meses' => 1, 'plazo_maximo_meses' => 60, 'multiplicadores_cupo' => [3,4,5]];
     $save = $db->prepare('INSERT INTO financial_products (product_type, name, code, parameters_json, created_by) VALUES (?, ?, ?, ?, ?)');
     try { $save->execute([$type, $name, $code, json_encode($parameters, JSON_UNESCAPED_UNICODE), $current['id']]); audit($db, $current['id'], 'producto', (int)$db->lastInsertId(), 'crear', $code); json_response(['ok' => true], 201); } catch (Throwable $e) { json_response(['error' => 'El código del producto ya existe.'], 422); }
 }
@@ -133,30 +191,32 @@ if ($action === 'savings-transactions' && $method === 'GET') {
     json_response(['transactions' => $rows]);
 }
 if ($action === 'savings-transactions' && $method === 'POST') {
-    $user = require_user(['administrador','tesoreria']); verify_csrf(); $v = body();
+    $user = require_user(['superadmin','operador']); verify_csrf(); $v = body();
     $associate = (int)($v['associate_id'] ?? 0); $product = (int)($v['product_id'] ?? 0); $amount = (float)($v['amount'] ?? 0); $type = clean($v['movement_type'] ?? '');
     if (!$associate || !$product || $amount <= 0 || !in_array($type, ['aporte','retiro'], true)) json_response(['error' => 'Completa asociado, producto, tipo y valor.'], 422);
+    try { require_core_product($db, $product, 'ahorro'); } catch (RuntimeException $error) { json_response(['error' => $error->getMessage()], 422); }
+    queue_operator_change($db, $user, 'savings_transaction', 'Registrar ' . $type . ' de ahorro', $v);
     $q=$db->prepare('INSERT INTO savings_transactions (associate_id,product_id,movement_type,amount,reference,recorded_by) VALUES (?,?,?,?,?,?)'); $q->execute([$associate,$product,$type,$amount,substr(clean($v['reference'] ?? ''),0,100),$user['id']]); audit($db,$user['id'],'ahorro',(int)$db->lastInsertId(),'registrar',$type); json_response(['ok'=>true],201);
 }
 if ($action === 'credit-applications' && $method === 'GET') { require_user(); $rows=$db->query('SELECT c.*,a.first_name,a.last_name,p.name AS product_name FROM credit_applications c JOIN associates a ON a.id=c.associate_id JOIN financial_products p ON p.id=c.product_id ORDER BY c.created_at DESC LIMIT 100')->fetchAll(); json_response(['applications'=>$rows]); }
-if ($action === 'credit-applications' && $method === 'POST') { $user=require_user(['administrador','creditos']); verify_csrf(); $v=body(); $a=(int)($v['associate_id']??0);$p=(int)($v['product_id']??0);$amount=(float)($v['amount']??0);$term=(int)($v['term_months']??0); if(!$a||!$p||$amount<=0||$term<1) json_response(['error'=>'Completa asociado, línea, monto y plazo.'],422); $q=$db->prepare('INSERT INTO credit_applications (associate_id,product_id,requested_amount,requested_term_months,purpose,created_by) VALUES (?,?,?,?,?,?)');$q->execute([$a,$p,$amount,$term,substr(clean($v['purpose']??''),0,255),$user['id']]);audit($db,$user['id'],'credito',(int)$db->lastInsertId(),'solicitar','Solicitud');json_response(['ok'=>true],201); }
-if ($action === 'credit-applications' && $method === 'PATCH') { $user=require_user(['administrador','creditos']);verify_csrf();$v=body();$id=(int)($v['id']??0);$status=clean($v['status']??'');if(!$id||!in_array($status,['aprobada','rechazada'],true))json_response(['error'=>'Decisión inválida.'],422);$q=$db->prepare('UPDATE credit_applications SET status=?, reviewed_by=?, reviewed_at=NOW(), decision_note=? WHERE id=? AND status="en_revision"');$q->execute([$status,$user['id'],substr(clean($v['note']??''),0,255),$id]);if(!$q->rowCount())json_response(['error'=>'La solicitud ya fue procesada.'],422);audit($db,$user['id'],'credito',$id,$status,'Decisión');json_response(['ok'=>true]); }
+if ($action === 'credit-applications' && $method === 'POST') { $user=require_user(['superadmin','operador']); verify_csrf(); $v=body(); $a=(int)($v['associate_id']??0);$p=(int)($v['product_id']??0);$amount=(float)($v['amount']??0);$term=(int)($v['term_months']??0); if(!$a||!$p||$amount<=0||$term<1||$term>60) json_response(['error'=>'Completa asociado, línea, monto y un plazo de 1 a 60 meses.'],422);try{require_core_product($db,$p,'credito');}catch(RuntimeException $error){json_response(['error'=>$error->getMessage()],422);} queue_operator_change($db,$user,'credit_application','Crear solicitud de crédito',$v); $q=$db->prepare('INSERT INTO credit_applications (associate_id,product_id,requested_amount,requested_term_months,purpose,created_by) VALUES (?,?,?,?,?,?)');$q->execute([$a,$p,$amount,$term,substr(clean($v['purpose']??''),0,255),$user['id']]);audit($db,$user['id'],'credito',(int)$db->lastInsertId(),'solicitar','Solicitud');json_response(['ok'=>true],201); }
+if ($action === 'credit-applications' && $method === 'PATCH') { $user=require_user(['superadmin','operador']);verify_csrf();$v=body();$id=(int)($v['id']??0);$status=clean($v['status']??'');if(!$id||!in_array($status,['aprobada','rechazada'],true))json_response(['error'=>'Decisión inválida.'],422);queue_operator_change($db,$user,'credit_decision','Decidir solicitud de crédito #' . $id,$v);$q=$db->prepare('UPDATE credit_applications SET status=?, reviewed_by=?, reviewed_at=NOW(), decision_note=? WHERE id=? AND status="en_revision"');$q->execute([$status,$user['id'],substr(clean($v['note']??''),0,255),$id]);if(!$q->rowCount())json_response(['error'=>'La solicitud ya fue procesada.'],422);audit($db,$user['id'],'credito',$id,$status,'Decisión');json_response(['ok'=>true]); }
 
 if ($action === 'affiliations' && $method === 'GET') { require_user(); json_response(['requests'=>$db->query('SELECT * FROM affiliation_requests ORDER BY created_at DESC LIMIT 100')->fetchAll()]); }
-if ($action === 'affiliations' && $method === 'POST') { $user=require_user(['administrador','afiliaciones']); verify_csrf(); $v=body(); $doc=substr(clean($v['document_number']??''),0,50);$first=substr(clean($v['first_name']??''),0,100);$last=substr(clean($v['last_name']??''),0,100);if(!$doc||!$first||!$last)json_response(['error'=>'Documento, nombres y apellidos son obligatorios.'],422);try{$q=$db->prepare('INSERT INTO affiliation_requests (document_number,first_name,last_name,email,phone,company_name,documents_status,created_by) VALUES (?,?,?,?,?,?,?,?)');$q->execute([$doc,$first,$last,substr(clean($v['email']??''),0,190),substr(clean($v['phone']??''),0,50),substr(clean($v['company']??''),0,190),clean($v['documents_status']??'pendientes')==='completos'?'completos':'pendientes',$user['id']]);audit($db,$user['id'],'afiliacion',(int)$db->lastInsertId(),'crear',$doc);json_response(['ok'=>true],201);}catch(Throwable $e){json_response(['error'=>'Ya existe una solicitud para este documento.'],422);}}
-if ($action === 'affiliations' && $method === 'PATCH') { $user=require_user(['administrador','afiliaciones']);verify_csrf();$v=body();$id=(int)($v['id']??0);$status=clean($v['status']??'');if(!$id||!in_array($status,['aprobada','rechazada'],true))json_response(['error'=>'Solicitud inválida.'],422);$db->beginTransaction();try{$q=$db->prepare('SELECT * FROM affiliation_requests WHERE id=? FOR UPDATE');$q->execute([$id]);$r=$q->fetch();if(!$r||$r['status']!=='en_revision')throw new RuntimeException();if($status==='aprobada'){$companyId=null;if($r['company_name']){$c=$db->prepare('SELECT id FROM companies WHERE name=?');$c->execute([$r['company_name']]);$companyId=$c->fetchColumn();if(!$companyId){$c=$db->prepare('INSERT INTO companies (name) VALUES (?)');$c->execute([$r['company_name']]);$companyId=(int)$db->lastInsertId();}}$a=$db->prepare('INSERT INTO associates (document_number,first_name,last_name,email,phone,company_id,status,affiliation_date) VALUES (?,?,?,?,?,?,"activo",CURDATE())');$a->execute([$r['document_number'],$r['first_name'],$r['last_name'],$r['email']?:null,$r['phone']?:null,$companyId?:null]);}$u=$db->prepare('UPDATE affiliation_requests SET status=?,reviewed_by=?,reviewed_at=NOW() WHERE id=?');$u->execute([$status,$user['id'],$id]);$db->commit();audit($db,$user['id'],'afiliacion',$id,$status,'Decisión');json_response(['ok'=>true]);}catch(Throwable $e){if($db->inTransaction())$db->rollBack();json_response(['error'=>'No fue posible procesar la solicitud.'],422);}}
+if ($action === 'affiliations' && $method === 'POST') { $user=require_user(['superadmin','operador']); verify_csrf(); $v=body(); $doc=substr(clean($v['document_number']??''),0,50);$first=substr(clean($v['first_name']??''),0,100);$last=substr(clean($v['last_name']??''),0,100);if(!$doc||!$first||!$last)json_response(['error'=>'Documento, nombres y apellidos son obligatorios.'],422);queue_operator_change($db,$user,'affiliation_create','Crear solicitud de afiliación ' . $doc,$v);try{$q=$db->prepare('INSERT INTO affiliation_requests (document_number,first_name,last_name,email,phone,company_name,documents_status,created_by) VALUES (?,?,?,?,?,?,?,?)');$q->execute([$doc,$first,$last,substr(clean($v['email']??''),0,190),substr(clean($v['phone']??''),0,50),substr(clean($v['company']??''),0,190),clean($v['documents_status']??'pendientes')==='completos'?'completos':'pendientes',$user['id']]);audit($db,$user['id'],'afiliacion',(int)$db->lastInsertId(),'crear',$doc);json_response(['ok'=>true],201);}catch(Throwable $e){json_response(['error'=>'Ya existe una solicitud para este documento.'],422);}}
+if ($action === 'affiliations' && $method === 'PATCH') { $user=require_user(['superadmin','operador']);verify_csrf();$v=body();$id=(int)($v['id']??0);$status=clean($v['status']??'');if(!$id||!in_array($status,['aprobada','rechazada'],true))json_response(['error'=>'Solicitud inválida.'],422);queue_operator_change($db,$user,'affiliation_decision','Decidir afiliación #' . $id,$v);$db->beginTransaction();try{$q=$db->prepare('SELECT * FROM affiliation_requests WHERE id=? FOR UPDATE');$q->execute([$id]);$r=$q->fetch();if(!$r||$r['status']!=='en_revision')throw new RuntimeException();if($status==='aprobada'){$companyId=null;if($r['company_name']){$c=$db->prepare('SELECT id FROM companies WHERE name=?');$c->execute([$r['company_name']]);$companyId=$c->fetchColumn();if(!$companyId){$c=$db->prepare('INSERT INTO companies (name) VALUES (?)');$c->execute([$r['company_name']]);$companyId=(int)$db->lastInsertId();}}$a=$db->prepare('INSERT INTO associates (document_number,first_name,last_name,email,phone,company_id,status,affiliation_date) VALUES (?,?,?,?,?,? ,"activo",CURDATE())');$a->execute([$r['document_number'],$r['first_name'],$r['last_name'],$r['email']?:null,$r['phone']?:null,$companyId?:null]);}$u=$db->prepare('UPDATE affiliation_requests SET status=?,reviewed_by=?,reviewed_at=NOW() WHERE id=?');$u->execute([$status,$user['id'],$id]);$db->commit();audit($db,$user['id'],'afiliacion',$id,$status,'Decisión');json_response(['ok'=>true]);}catch(Throwable $e){if($db->inTransaction())$db->rollBack();json_response(['error'=>'No fue posible procesar la solicitud.'],422);}}
 
-if ($action === 'catalog' && $method === 'GET') { require_user(['administrador']); $category=clean($_GET['category']??''); $q=$db->prepare('SELECT id,category,label,payload,active FROM configuration_catalog WHERE (?="" OR category=?) ORDER BY category,label');$q->execute([$category,$category]);$rows=$q->fetchAll();foreach($rows as &$row)$row['payload']=json_decode($row['payload'],true)?:[];json_response(['items'=>$rows]); }
-if ($action === 'catalog' && $method === 'POST') { $user=require_user(['administrador']);verify_csrf();$v=body();$category=substr(clean($v['category']??''),0,80);$label=substr(clean($v['label']??''),0,190);$allowed=['documento_afiliacion','periodo_cobro','medio_pago','flujo_aprobacion','rol_operativo','plantilla_documento'];if(!$category||!$label||!in_array($category,$allowed,true))json_response(['error'=>'Categoría o nombre inválido.'],422);$q=$db->prepare('INSERT INTO configuration_catalog(category,label,payload,created_by) VALUES (?,?,?,?)');try{$q->execute([$category,$label,json_encode(is_array($v['payload']??null)?$v['payload']:[],JSON_UNESCAPED_UNICODE),$user['id']]);audit($db,$user['id'],'catalogo',(int)$db->lastInsertId(),'crear',$category);json_response(['ok'=>true],201);}catch(Throwable $e){json_response(['error'=>'Ya existe un elemento con ese nombre.'],422);}}
+if ($action === 'catalog' && $method === 'GET') { require_user(['superadmin']); $category=clean($_GET['category']??''); $q=$db->prepare('SELECT id,category,label,payload,active FROM configuration_catalog WHERE (?="" OR category=?) ORDER BY category,label');$q->execute([$category,$category]);$rows=$q->fetchAll();foreach($rows as &$row)$row['payload']=json_decode($row['payload'],true)?:[];json_response(['items'=>$rows]); }
+if ($action === 'catalog' && $method === 'POST') { $user=require_user(['superadmin']);verify_csrf();$v=body();$category=substr(clean($v['category']??''),0,80);$label=substr(clean($v['label']??''),0,190);$allowed=['documento_afiliacion','periodo_cobro','medio_pago','flujo_aprobacion','rol_operativo','plantilla_documento'];if(!$category||!$label||!in_array($category,$allowed,true))json_response(['error'=>'Categoría o nombre inválido.'],422);$q=$db->prepare('INSERT INTO configuration_catalog(category,label,payload,created_by) VALUES (?,?,?,?)');try{$q->execute([$category,$label,json_encode(is_array($v['payload']??null)?$v['payload']:[],JSON_UNESCAPED_UNICODE),$user['id']]);audit($db,$user['id'],'catalogo',(int)$db->lastInsertId(),'crear',$category);json_response(['ok'=>true],201);}catch(Throwable $e){json_response(['error'=>'Ya existe un elemento con ese nombre.'],422);}}
 if ($action === 'payments' && $method === 'GET') { require_user();$rows=$db->query('SELECT p.*,a.first_name,a.last_name,c.label AS payment_method FROM payments p JOIN associates a ON a.id=p.associate_id LEFT JOIN configuration_catalog c ON c.id=p.payment_method_id ORDER BY p.received_on DESC,p.id DESC LIMIT 100')->fetchAll();json_response(['payments'=>$rows]); }
-if ($action === 'payments' && $method === 'POST') { $user=require_user(['administrador','tesoreria']);verify_csrf();$v=body();$a=(int)($v['associate_id']??0);$amount=(float)($v['amount']??0);$concept=substr(clean($v['concept']??''),0,150);if(!$a||$amount<=0||!$concept)json_response(['error'=>'Completa asociado, concepto y valor.'],422);$q=$db->prepare('INSERT INTO payments(associate_id,payment_method_id,concept,amount,reference,received_on,recorded_by)VALUES(?,?,?,?,?,?,?)');$q->execute([$a,(int)($v['payment_method_id']??0)?:null,$concept,$amount,substr(clean($v['reference']??''),0,100),clean($v['received_on']??'')?:date('Y-m-d'),$user['id']]);audit($db,$user['id'],'pago',(int)$db->lastInsertId(),'registrar',$concept);json_response(['ok'=>true],201); }
+if ($action === 'payments' && $method === 'POST') { $user=require_user(['superadmin','operador']);verify_csrf();$v=body();$a=(int)($v['associate_id']??0);$amount=(float)($v['amount']??0);$concept=substr(clean($v['concept']??''),0,150);if(!$a||$amount<=0||!$concept)json_response(['error'=>'Completa asociado, concepto y valor.'],422);queue_operator_change($db,$user,'payment_create','Registrar pago ' . $concept,$v);$q=$db->prepare('INSERT INTO payments(associate_id,payment_method_id,concept,amount,reference,received_on,recorded_by)VALUES(?,?,?,?,?,?,?)');$q->execute([$a,(int)($v['payment_method_id']??0)?:null,$concept,$amount,substr(clean($v['reference']??''),0,100),clean($v['received_on']??'')?:date('Y-m-d'),$user['id']]);audit($db,$user['id'],'pago',(int)$db->lastInsertId(),'registrar',$concept);json_response(['ok'=>true],201); }
 if ($action === 'payroll-collections' && $method === 'GET') { require_user();json_response(['collections'=>$db->query('SELECT * FROM payroll_collections ORDER BY created_at DESC LIMIT 100')->fetchAll()]); }
-if ($action === 'payroll-collections' && $method === 'POST') { $u=require_user(['administrador','tesoreria']);verify_csrf();$v=body();$period=substr(clean($v['period_label']??''),0,100);if(!$period)json_response(['error'=>'El período es obligatorio.'],422);$q=$db->prepare('INSERT INTO payroll_collections(period_label,expected_amount,created_by)VALUES(?,?,?)');$q->execute([$period,max(0,(float)($v['expected_amount']??0)),$u['id']]);audit($db,$u['id'],'cobro_nomina',(int)$db->lastInsertId(),'crear',$period);json_response(['ok'=>true],201); }
+if ($action === 'payroll-collections' && $method === 'POST') { $u=require_user(['superadmin','operador']);verify_csrf();$v=body();$period=substr(clean($v['period_label']??''),0,100);if(!$period)json_response(['error'=>'El período es obligatorio.'],422);queue_operator_change($db,$u,'payroll_collection_create','Crear cobro de nómina ' . $period,$v);$q=$db->prepare('INSERT INTO payroll_collections(period_label,expected_amount,created_by)VALUES(?,?,?)');$q->execute([$period,max(0,(float)($v['expected_amount']??0)),$u['id']]);audit($db,$u['id'],'cobro_nomina',(int)$db->lastInsertId(),'crear',$period);json_response(['ok'=>true],201); }
 if ($action === 'promissory-notes' && $method === 'GET') { require_user();$rows=$db->query('SELECT n.*,a.first_name,a.last_name FROM promissory_notes n JOIN associates a ON a.id=n.associate_id ORDER BY n.created_at DESC LIMIT 100')->fetchAll();json_response(['notes'=>$rows]); }
-if ($action === 'promissory-notes' && $method === 'POST') { $u=require_user(['administrador','creditos']);verify_csrf();$v=body();$a=(int)($v['associate_id']??0);$number=substr(clean($v['note_number']??''),0,100);if(!$a||!$number)json_response(['error'=>'Asociado y número de pagaré son obligatorios.'],422);try{$q=$db->prepare('INSERT INTO promissory_notes(associate_id,credit_application_id,note_number,status,notes,created_by)VALUES(?,?,?,?,?,?)');$q->execute([$a,(int)($v['credit_application_id']??0)?:null,$number,'borrador',substr(clean($v['notes']??''),0,255),$u['id']]);audit($db,$u['id'],'pagare',(int)$db->lastInsertId(),'crear',$number);json_response(['ok'=>true],201);}catch(Throwable $e){json_response(['error'=>'Ese número de pagaré ya existe.'],422);}}
+if ($action === 'promissory-notes' && $method === 'POST') { $u=require_user(['superadmin','operador']);verify_csrf();$v=body();$a=(int)($v['associate_id']??0);$number=substr(clean($v['note_number']??''),0,100);if(!$a||!$number)json_response(['error'=>'Asociado y número de pagaré son obligatorios.'],422);queue_operator_change($db,$u,'promissory_note_create','Registrar pagaré ' . $number,$v);try{$q=$db->prepare('INSERT INTO promissory_notes(associate_id,credit_application_id,note_number,status,notes,created_by)VALUES(?,?,?,?,?,?)');$q->execute([$a,(int)($v['credit_application_id']??0)?:null,$number,'borrador',substr(clean($v['notes']??''),0,255),$u['id']]);audit($db,$u['id'],'pagare',(int)$db->lastInsertId(),'crear',$number);json_response(['ok'=>true],201);}catch(Throwable $e){json_response(['error'=>'Ese número de pagaré ya existe.'],422);}}
 if ($action === 'dashboard' && $method === 'GET') { require_user();json_response(['metrics'=>['asociados'=>(int)$db->query('SELECT COUNT(*) FROM associates WHERE status="activo"')->fetchColumn(),'afiliaciones_pendientes'=>(int)$db->query('SELECT COUNT(*) FROM affiliation_requests WHERE status="en_revision"')->fetchColumn(),'pagos_aplicados'=>(float)$db->query('SELECT COALESCE(SUM(amount),0) FROM payments WHERE status="aplicado"')->fetchColumn(),'cartera_abierta'=>(float)$db->query('SELECT COALESCE(SUM(amount),0) FROM receivables WHERE status IN ("por_vencer","vencida")')->fetchColumn()]]); }
-if ($action === 'users' && $method === 'GET') { require_user(['administrador']);json_response(['users'=>$db->query('SELECT id,full_name,email,role,active,created_at FROM internal_users ORDER BY full_name')->fetchAll()]); }
-if ($action === 'users' && $method === 'POST') { $u=require_user(['administrador']);verify_csrf();$v=body();$name=substr(clean($v['full_name']??''),0,160);$email=strtolower(substr(clean($v['email']??''),0,190));$role=clean($v['role']??'');$password=(string)($v['password']??'');if(!$name||!filter_var($email,FILTER_VALIDATE_EMAIL)||!in_array($role,FEGCON_ROLES,true)||strlen($password)<12)json_response(['error'=>'Completa nombre, correo, rol y una contraseña de mínimo 12 caracteres.'],422);try{$q=$db->prepare('INSERT INTO internal_users(full_name,email,password_hash,role)VALUES(?,?,?,?)');$q->execute([$name,$email,password_hash($password,PASSWORD_DEFAULT),$role]);audit($db,$u['id'],'usuario',(int)$db->lastInsertId(),'crear',$email);json_response(['ok'=>true],201);}catch(Throwable $e){json_response(['error'=>'Ese correo ya está registrado.'],422);}}
+if ($action === 'users' && $method === 'GET') { require_user(['superadmin']);json_response(['users'=>$db->query('SELECT id,full_name,email,role,active,created_at FROM internal_users ORDER BY full_name')->fetchAll()]); }
+if ($action === 'users' && $method === 'POST') { $u=require_user(['superadmin']);verify_csrf();$v=body();$name=substr(clean($v['full_name']??''),0,160);$email=strtolower(substr(clean($v['email']??''),0,190));$role=clean($v['role']??'');$password=(string)($v['password']??'');if(!$name||!filter_var($email,FILTER_VALIDATE_EMAIL)||!in_array($role,FEGCON_ROLES,true)||strlen($password)<12)json_response(['error'=>'Completa nombre, correo, rol y una contraseña de mínimo 12 caracteres.'],422);if($role==='superadmin'&&(int)$db->query('SELECT COUNT(*) FROM internal_users WHERE role="superadmin" AND active=1')->fetchColumn()>0)json_response(['error'=>'La cuenta Superadmin es única. Solo se pueden crear cuentas Operador.'],422);try{$q=$db->prepare('INSERT INTO internal_users(full_name,email,password_hash,role)VALUES(?,?,?,?)');$q->execute([$name,$email,password_hash($password,PASSWORD_DEFAULT),$role]);audit($db,$u['id'],'usuario',(int)$db->lastInsertId(),'crear',$email);json_response(['ok'=>true],201);}catch(Throwable $e){json_response(['error'=>'Ese correo ya está registrado.'],422);}}
 if ($action === 'receivables' && $method === 'GET') { require_user();$rows=$db->query('SELECT r.*,a.first_name,a.last_name FROM receivables r JOIN associates a ON a.id=r.associate_id ORDER BY r.due_date LIMIT 100')->fetchAll();json_response(['receivables'=>$rows]); }
-if ($action === 'receivables' && $method === 'POST') { $u=require_user(['administrador','cartera']);verify_csrf();$v=body();$a=(int)($v['associate_id']??0);$amount=(float)($v['amount']??0);$ref=substr(clean($v['reference']??''),0,100);$date=clean($v['due_date']??'');if(!$a||!$ref||$amount<=0||!$date)json_response(['error'=>'Completa asociado, referencia, vencimiento y valor.'],422);$q=$db->prepare('INSERT INTO receivables(associate_id,reference,due_date,amount,created_by)VALUES(?,?,?,?,?)');$q->execute([$a,$ref,$date,$amount,$u['id']]);audit($db,$u['id'],'cartera',(int)$db->lastInsertId(),'crear',$ref);json_response(['ok'=>true],201); }
+if ($action === 'receivables' && $method === 'POST') { $u=require_user(['superadmin','operador']);verify_csrf();$v=body();$a=(int)($v['associate_id']??0);$amount=(float)($v['amount']??0);$ref=substr(clean($v['reference']??''),0,100);$date=clean($v['due_date']??'');if(!$a||!$ref||$amount<=0||!$date)json_response(['error'=>'Completa asociado, referencia, vencimiento y valor.'],422);queue_operator_change($db,$u,'receivable_create','Registrar obligación ' . $ref,$v);$q=$db->prepare('INSERT INTO receivables(associate_id,reference,due_date,amount,created_by)VALUES(?,?,?,?,?)');$q->execute([$a,$ref,$date,$amount,$u['id']]);audit($db,$u['id'],'cartera',(int)$db->lastInsertId(),'crear',$ref);json_response(['ok'=>true],201); }
 json_response(['error' => 'Ruta no encontrada.'], 404);
