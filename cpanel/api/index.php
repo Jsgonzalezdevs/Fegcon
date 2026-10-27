@@ -99,6 +99,12 @@ if ($action === 'approval-requests' && $method === 'PATCH') {
             $q->execute([$current['id'], (int)($payload['document_id'] ?? 0)]);
             if (!$q->rowCount()) throw new RuntimeException('El documento ya fue atendido o no existe.');
             audit($db, $current['id'], 'documento_pagare', (int)$payload['document_id'], 'rechazar_custodia', substr(clean($payload['label'] ?? ''), 0, 120));
+        } elseif ($request['operation'] === 'credit_document_create') {
+            $payload = json_decode($request['payload_json'], true) ?: [];
+            $q = $db->prepare('UPDATE credit_documents SET status="rechazado",reviewed_by=?,reviewed_at=NOW() WHERE id=? AND status="pendiente"');
+            $q->execute([$current['id'], (int)($payload['document_id'] ?? 0)]);
+            if (!$q->rowCount()) throw new RuntimeException('El documento ya fue atendido o no existe.');
+            audit($db, $current['id'], 'documento_credito', (int)$payload['document_id'], 'rechazar_custodia', substr(clean($payload['label'] ?? ''), 0, 80));
         }
         $q = $db->prepare('UPDATE approval_requests SET status=?,reviewed_by=?,reviewed_at=NOW() WHERE id=?'); $q->execute([$decision, $current['id'], $id]);
         audit($db, $current['id'], 'solicitud_cambio', $id, $decision, $request['summary']);
@@ -247,7 +253,7 @@ if ($action === 'credit-installments' && $method === 'GET') {
     $sql='SELECT i.*,c.associate_id,c.requested_amount,a.first_name,a.last_name FROM credit_installments i JOIN credit_applications c ON c.id=i.credit_application_id JOIN associates a ON a.id=c.associate_id WHERE i.status="pendiente" AND c.status="desembolsada"';$params=[];
     if($associate){$sql.=' AND c.associate_id=?';$params[]=$associate;}if($credit){$sql.=' AND c.id=?';$params[]=$credit;}$sql.=' ORDER BY i.due_date,i.credit_application_id,i.installment_number LIMIT 300';$q=$db->prepare($sql);$q->execute($params);json_response(['installments'=>$q->fetchAll()]);
 }
-if ($action === 'credit-applications' && $method === 'POST') { $user=require_user(['superadmin','operador']); verify_csrf(); $v=body(); $a=(int)($v['associate_id']??0);$p=(int)($v['product_id']??0);$amount=(float)($v['amount']??0);$term=(int)($v['term_months']??0); if(!$a||!$p||$amount<=0||$term<1||$term>60) json_response(['error'=>'Completa asociado, línea, monto y un plazo de 1 a 60 meses.'],422);try{require_core_product($db,$p,'credito');$balance=active_savings_components($db,$a); }catch(RuntimeException $error){json_response(['error'=>$error->getMessage()],422);} $base=max(0,$balance['aportes']);if($amount>$base*5)json_response(['error'=>'El monto supera el cupo máximo de cinco veces los aportes registrados.'],422);queue_operator_change($db,$user,'credit_application','Crear solicitud de crédito',$v); $q=$db->prepare('INSERT INTO credit_applications (associate_id,product_id,requested_amount,requested_term_months,purpose,created_by) VALUES (?,?,?,?,?,?)');$q->execute([$a,$p,$amount,$term,substr(clean($v['purpose']??''),0,255),$user['id']]);audit($db,$user['id'],'credito',(int)$db->lastInsertId(),'solicitar','Solicitud');json_response(['ok'=>true],201); }
+if ($action === 'credit-applications' && $method === 'POST') { $user=require_user(['superadmin','operador']); verify_csrf(); $v=body(); $a=(int)($v['associate_id']??0);$p=(int)($v['product_id']??0);$amount=(float)($v['amount']??0);$term=(int)($v['term_months']??0);$channel=clean($v['credit_channel']??'');if(!$a||!$p||$amount<=0||$term<1||$term>60||!in_array($channel,['libranza','independiente'],true)) json_response(['error'=>'Completa asociado, modalidad, línea, monto y un plazo de 1 a 60 meses.'],422);try{require_core_product($db,$p,'credito');$active=$db->prepare('SELECT id FROM associates WHERE id=? AND status="activo"');$active->execute([$a]);if(!$active->fetchColumn())throw new RuntimeException('Selecciona un asociado activo.');$balance=active_savings_components($db,$a); }catch(RuntimeException $error){json_response(['error'=>$error->getMessage()],422);} $base=max(0,$balance['aportes']);if($amount>$base*5)json_response(['error'=>'El monto supera el cupo máximo de cinco veces los aportes registrados.'],422);queue_operator_change($db,$user,'credit_application','Crear solicitud de crédito',$v); $q=$db->prepare('INSERT INTO credit_applications (associate_id,product_id,requested_amount,requested_term_months,purpose,credit_channel,created_by) VALUES (?,?,?,?,?,?,?)');$q->execute([$a,$p,$amount,$term,substr(clean($v['purpose']??''),0,255),$channel,$user['id']]);$id=(int)$db->lastInsertId();audit($db,$user['id'],'credito',$id,'solicitar','Solicitud');json_response(['ok'=>true,'id'=>$id],201); }
 if ($action === 'credit-applications' && $method === 'PATCH') {
     $user=require_user(['superadmin','operador']);verify_csrf();$v=body();$id=(int)($v['id']??0);$status=clean($v['status']??'');
     if(!$id||!in_array($status,['aprobada','rechazada','desembolsada'],true))json_response(['error'=>'Decisión inválida.'],422);
@@ -259,20 +265,7 @@ if ($action === 'credit-applications' && $method === 'PATCH') {
     }
     if($user['role']!=='superadmin')json_response(['error'=>'Solo la Superadmin puede aprobar o rechazar créditos.'],403);
     try {
-        $db->beginTransaction();
-        $q=$db->prepare('SELECT associate_id,requested_amount,requested_term_months FROM credit_applications WHERE id=? AND status="en_revision" FOR UPDATE');$q->execute([$id]);$application=$q->fetch();
-        if(!$application)throw new RuntimeException('La solicitud ya fue procesada o no existe.');
-        $multiplier=(int)($v['multiplier']??0);$monthly=null;
-        if($status==='aprobada'){
-            if(!in_array($multiplier,[3,4,5],true))throw new RuntimeException('Selecciona el cupo aprobado: 3, 4 o 5 veces los aportes.');
-            $balance=active_savings_components($db,(int)$application['associate_id'],true);$base=max(0,$balance['aportes']);
-            if((float)$application['requested_amount']>$base*$multiplier)throw new RuntimeException('El monto solicitado supera el cupo del multiplicador elegido.');
-            $term=(int)$application['requested_term_months'];$principal=(float)$application['requested_amount'];$monthly=$principal*.02/(1-pow(1.02,-$term));
-        }
-        $q=$db->prepare('UPDATE credit_applications SET status=?, reviewed_by=?, reviewed_at=NOW(), decision_note=?, approved_multiplier=?, monthly_installment=? WHERE id=? AND status="en_revision"');$q->execute([$status,$user['id'],substr(clean($v['note']??''),0,255),$status==='aprobada'?$multiplier:null,$monthly,$id]);
-        if(!$q->rowCount())throw new RuntimeException('La solicitud ya fue procesada.');
-        audit($db,$user['id'],'credito',$id,$status,$status==='aprobada'?'Multiplicador x'.$multiplier.' · Cuota '.number_format((float)$monthly,2,'.',''):'Decisión');
-        $db->commit();json_response(['ok'=>true,'monthly_installment'=>$monthly]);
+        $db->beginTransaction();$result=apply_approved_change($db,$user['id'],$user['id'],'credit_decision',$v);$db->commit();json_response(['ok'=>true,'monthly_installment'=>$result['monthly_installment']??null]);
     } catch (Throwable $error) {
         if($db->inTransaction())$db->rollBack();
         json_response(['error'=>$error instanceof RuntimeException?$error->getMessage():'No fue posible procesar la solicitud.'],422);
@@ -339,6 +332,41 @@ if ($action === 'payroll-collections' && $method === 'PATCH') {
     queue_operator_change($db,$current,'payroll_collection_status','Cambiar estado de relación de nómina',$payload);
     try{$db->beginTransaction();apply_approved_change($db,$current['id'],$current['id'],'payroll_collection_status',$payload);$db->commit();json_response(['ok'=>true]);}
     catch(Throwable $error){if($db->inTransaction())$db->rollBack();json_response(['error'=>$error instanceof RuntimeException?$error->getMessage():'No fue posible cambiar el estado.'],422);}
+}
+if ($action === 'credit-documents' && $method === 'GET') {
+    $current=require_user();$creditId=(int)($_GET['credit_application_id']??0);if(!$creditId)json_response(['error'=>'Selecciona una solicitud de crédito.'],422);
+    if($current['role']==='superadmin'){$q=$db->prepare('SELECT id,credit_application_id,label,original_name,mime_type,byte_size,status,created_at,reviewed_at FROM credit_documents WHERE credit_application_id=? AND status<>"retirado" ORDER BY created_at DESC');$q->execute([$creditId]);}
+    else{$q=$db->prepare('SELECT id,credit_application_id,label,original_name,mime_type,byte_size,status,created_at,reviewed_at FROM credit_documents WHERE credit_application_id=? AND (status="custodiado" OR (status="pendiente" AND created_by=?)) ORDER BY created_at DESC');$q->execute([$creditId,$current['id']]);}json_response(['documents'=>$q->fetchAll()]);
+}
+if ($action === 'credit-documents' && $method === 'POST') {
+    $current=require_user(['superadmin','operador']);verify_csrf();$creditId=(int)($_POST['credit_application_id']??0);$label=clean($_POST['label']??'');$upload=$_FILES['file']??null;
+    $q=$db->prepare('SELECT c.id,c.associate_id,c.credit_channel,c.status,a.first_name,a.last_name FROM credit_applications c JOIN associates a ON a.id=c.associate_id WHERE c.id=?');$q->execute([$creditId]);$credit=$q->fetch();
+    if(!$credit||!in_array($credit['status'],['en_revision','aprobada'],true))json_response(['error'=>'Los soportes se adjuntan a solicitudes en revisión o aprobadas.'],422);
+    $allowed=$credit['credit_channel']==='libranza'?['desprendible_1','desprendible_2','certificacion_laboral']:['declaracion_renta'];
+    $labels=['desprendible_1'=>'Primer desprendible de pago','desprendible_2'=>'Segundo desprendible de pago','certificacion_laboral'=>'Certificación laboral','declaracion_renta'=>'Declaración de renta'];
+    if(!$label||!in_array($label,$allowed,true)||!is_array($upload))json_response(['error'=>'Selecciona uno de los documentos requeridos para esta modalidad y adjunta el archivo.'],422);
+    if((int)($upload['error']??UPLOAD_ERR_NO_FILE)!==UPLOAD_ERR_OK)json_response(['error'=>'No se pudo recibir el archivo. Vuelve a seleccionarlo.'],422);
+    $size=(int)($upload['size']??0);if($size<1||$size>15*1024*1024)json_response(['error'=>'El archivo debe pesar menos de 15 MB.'],422);
+    if(!is_uploaded_file((string)($upload['tmp_name']??''))||!class_exists('finfo'))json_response(['error'=>'El archivo recibido no es válido o el servidor no puede verificarlo.'],422);
+    $mime=(new finfo(FILEINFO_MIME_TYPE))->file($upload['tmp_name']);$types=['application/pdf'=>'pdf','image/jpeg'=>'jpg','image/png'=>'png'];if(!isset($types[$mime]))json_response(['error'=>'Solo se permiten PDF o escaneos JPG y PNG.'],422);
+    $original=substr(preg_replace('/[\\x00-\\x1F\\x7F]/','',basename((string)($upload['name']??'documento'))),0,255);$storageKey=bin2hex(random_bytes(24)).'.'.$types[$mime];$storedPath=null;
+    try {
+        $storedPath=private_credit_document_path((int)$credit['associate_id'],$creditId,$storageKey);if(!move_uploaded_file($upload['tmp_name'],$storedPath))throw new RuntimeException('No fue posible guardar el archivo privado.');@chmod($storedPath,0600);
+        $db->beginTransaction();$status=$current['role']==='superadmin'?'custodiado':'pendiente';$reviewedBy=$status==='custodiado'?$current['id']:null;$reviewedAt=$status==='custodiado'?date('Y-m-d H:i:s'):null;$q=$db->prepare('INSERT INTO credit_documents(credit_application_id,label,original_name,storage_key,mime_type,byte_size,status,created_by,reviewed_by,reviewed_at) VALUES(?,?,?,?,?,?,?,?,?,?)');$q->execute([$creditId,$label,$original,$storageKey,$mime,$size,$status,$current['id'],$reviewedBy,$reviewedAt]);$documentId=(int)$db->lastInsertId();
+        if($status==='pendiente'){$summary='Revisar '.$labels[$label].' del crédito #'.$creditId;$payload=['document_id'=>$documentId,'credit_application_id'=>$creditId,'label'=>$label,'original_name'=>$original,'mime_type'=>$mime,'byte_size'=>$size];$q=$db->prepare('INSERT INTO approval_requests(requested_by,operation,summary,payload_json) VALUES(?,?,?,?)');$q->execute([$current['id'],'credit_document_create',substr($summary,0,255),json_encode($payload,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR)]);audit($db,$current['id'],'solicitud_cambio',(int)$db->lastInsertId(),'solicitar',$summary);}
+        else audit($db,$current['id'],'documento_credito',$documentId,'custodiar',$label);
+        $db->commit();json_response(['ok'=>true,'pending_approval'=>$status==='pendiente','message'=>$status==='pendiente'?'El soporte quedó privado y espera revisión de la Superadmin.':'Soporte guardado en el expediente privado del crédito.'],201);
+    } catch(Throwable $error){if($db->inTransaction())$db->rollBack();if($storedPath&&is_file($storedPath))@unlink($storedPath);json_response(['error'=>$error instanceof RuntimeException?$error->getMessage():'No fue posible guardar el soporte.'],422);}
+}
+if ($action === 'credit-documents' && $method === 'DELETE') {
+    $current=require_user(['superadmin','operador']);verify_csrf();$id=(int)($_GET['id']??0);$q=$db->prepare('SELECT d.id,d.credit_application_id,d.label,d.status FROM credit_documents d WHERE d.id=?');$q->execute([$id]);$document=$q->fetch();if(!$document||$document['status']!=='custodiado')json_response(['error'=>'El soporte ya fue retirado o no existe.'],422);
+    if($current['role']==='operador'){$summary='Retirar soporte '.$document['label'].' del crédito #'.$document['credit_application_id'];$payload=['document_id'=>$id,'credit_application_id'=>(int)$document['credit_application_id'],'label'=>$document['label']];$q=$db->prepare('INSERT INTO approval_requests(requested_by,operation,summary,payload_json) VALUES(?,?,?,?)');$q->execute([$current['id'],'credit_document_delete',substr($summary,0,255),json_encode($payload,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR)]);audit($db,$current['id'],'solicitud_cambio',(int)$db->lastInsertId(),'solicitar',$summary);json_response(['ok'=>true,'pending_approval'=>true,'message'=>'La solicitud de retiro fue enviada a la Superadmin.'],202);}
+    $q=$db->prepare('UPDATE credit_documents SET status="retirado",reviewed_by=?,reviewed_at=NOW() WHERE id=? AND status="custodiado"');$q->execute([$current['id'],$id]);if(!$q->rowCount())json_response(['error'=>'El soporte ya fue retirado.'],422);audit($db,$current['id'],'documento_credito',$id,'retirar',$document['label']);json_response(['ok'=>true,'message'=>'Soporte retirado de la vista operativa; se conserva en la carpeta privada.']);
+}
+if ($action === 'credit-document-file' && $method === 'GET') {
+    $current=require_user();$id=(int)($_GET['id']??0);$q=$db->prepare('SELECT d.original_name,d.storage_key,d.mime_type,d.status,c.id AS credit_id,c.associate_id FROM credit_documents d JOIN credit_applications c ON c.id=d.credit_application_id WHERE d.id=?');$q->execute([$id]);$document=$q->fetch();if(!$document||!in_array($document['status'],['custodiado','pendiente','rechazado'],true))json_response(['error'=>'El documento no está disponible.'],404);if($document['status']!=='custodiado'&&$current['role']!=='superadmin')json_response(['error'=>'No tienes permiso para abrir este documento.'],403);
+    try{$path=private_credit_document_path((int)$document['associate_id'],(int)$document['credit_id'],$document['storage_key']);}catch(Throwable $error){json_response(['error'=>'Archivo privado no válido.'],404);}if(!is_file($path))json_response(['error'=>'El archivo no se encuentra en la carpeta privada.'],404);
+    $fallback=preg_replace('/[^A-Za-z0-9._-]/','_',basename($document['original_name']));header('Content-Type: '.$document['mime_type']);header('Content-Length: '.filesize($path));header('Content-Disposition: attachment; filename="'.$fallback.'"; filename*=UTF-8\'\''.rawurlencode($document['original_name']));header('X-Content-Type-Options: nosniff');header('Cache-Control: no-store, private');readfile($path);exit;
 }
 if ($action === 'promissory-documents' && $method === 'GET') {
     $current=require_user();$noteId=(int)($_GET['note_id']??0);if(!$noteId)json_response(['error'=>'Selecciona un pagaré.'],422);

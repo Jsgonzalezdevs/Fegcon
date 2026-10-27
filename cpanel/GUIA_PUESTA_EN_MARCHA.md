@@ -40,6 +40,7 @@ Antes de operar, la Superadmin debe configurar:
 ## Estado de módulos
 
 - Las solicitudes del Operador se aplican solo después de la aprobación de la Superadmin.
+- La solicitud de crédito distingue libranza e independiente. Los desprendibles, la certificación laboral y la declaración de renta se cargan en el expediente privado; la aprobación se bloquea hasta que la Superadmin custodie los soportes obligatorios. Para independientes, la Superadmin deja registrado si exige uno o dos codeudores.
 - La instalación parte sin asociados, saldos, solicitudes, pagos, pagarés ni relaciones de cobro de ejemplo. El primer inicio muestra ceros y estados vacíos hasta ingresar datos reales.
 - Al aprobar un crédito, la Superadmin u Operador inicia el desembolso indicando las fechas reales. La aprobación de la Superadmin deja el crédito desembolsado y genera el plan mensual con tasa fija del 2% sobre saldo pendiente; la última cuota ajusta los centavos de redondeo.
 - Las cuotas programadas aparecen en Cartera. En Pagos se puede vincular un recaudo a una cuota, y el sistema actualiza su saldo pagado; los pagos generales quedan en el historial sin alterar cuotas.

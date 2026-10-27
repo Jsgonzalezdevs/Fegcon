@@ -27,9 +27,11 @@ Una instalación nueva no carga ejemplos. Solo se crean los productos institucio
 
 Los operadores no aplican cambios directamente: cada alta, cambio o decisión operativa que registren queda en espera de aprobación Superadmin. La Superadmin crea las cuentas Operador y aprueba o rechaza esas solicitudes.
 
-## Custodia privada de pagarés
+Las solicitudes de crédito registran la modalidad. Libranza exige dos desprendibles y certificación laboral; independiente exige declaración de renta y la Superadmin define uno o dos codeudores por caso. Los soportes se cargan en privado y el crédito no se puede aprobar hasta que los documentos requeridos queden custodiados.
 
-Al cargar el primer escaneo, la API crea `fegcon-private-documents` en la carpeta de la cuenta de hosting, fuera de `public_html`. El usuario de PHP debe poder crear esa carpeta y escribir en ella. Los archivos se aceptan en PDF, JPG o PNG hasta 15 MB y se sirven únicamente tras verificar la sesión interna. El Operador puede proponer una carga o retiro; la Superadmin revisa cada cambio.
+## Custodia privada de documentos
+
+Al cargar el primer escaneo, la API crea `fegcon-private-documents` en la carpeta de la cuenta de hosting, fuera de `public_html`. Allí organiza los expedientes de crédito por asociado y solicitud, y los archivos del pagaré. El usuario de PHP debe poder crear carpetas y escribir en ellas. Los archivos se aceptan en PDF, JPG o PNG hasta 15 MB y se sirven únicamente tras verificar la sesión interna. El Operador puede proponer una carga o retiro; la Superadmin revisa cada cambio.
 
 ## Actualización de una instalación existente
 
