@@ -181,14 +181,19 @@ if ($action === 'settings' && $method === 'POST') {
     $current = require_user(['superadmin']); verify_csrf();
     $input = body();
     $organization = is_array($input['organization'] ?? null) ? $input['organization'] : [];
-    $modules = is_array($input['modules'] ?? null) ? $input['modules'] : [];
     $organization = ['name' => substr(clean($organization['name'] ?? ''), 0, 190), 'nit' => substr(clean($organization['nit'] ?? ''), 0, 50), 'email' => substr(clean($organization['email'] ?? ''), 0, 190), 'currency' => 'COP'];
-    $allowed = ['afiliaciones', 'ahorros', 'creditos', 'cobros', 'pagos'];
-    $modules = array_fill_keys($allowed, false);
-    foreach ($allowed as $key) $modules[$key] = !empty($input['modules'][$key]);
     $save = $db->prepare('INSERT INTO app_settings (setting_key, setting_value, updated_by) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value), updated_by=VALUES(updated_by)');
     $save->execute(['organization', json_encode($organization, JSON_UNESCAPED_UNICODE), $current['id']]);
-    $save->execute(['modules', json_encode($modules, JSON_UNESCAPED_UNICODE), $current['id']]);
+    $modules = [];
+    if (is_array($input['modules'] ?? null)) {
+        $allowed = ['afiliaciones', 'ahorros', 'creditos', 'cobros', 'pagos'];
+        $modules = array_fill_keys($allowed, false);
+        foreach ($allowed as $key) $modules[$key] = !empty($input['modules'][$key]);
+        $save->execute(['modules', json_encode($modules, JSON_UNESCAPED_UNICODE), $current['id']]);
+    } else {
+        $existing = $db->query('SELECT setting_value FROM app_settings WHERE setting_key="modules"')->fetchColumn();
+        $modules = is_string($existing) ? (json_decode($existing, true) ?: []) : [];
+    }
     audit($db, $current['id'], 'configuracion', 0, 'actualizar', 'Configuración general');
     json_response(['organization' => $organization, 'modules' => $modules]);
 }
@@ -355,7 +360,17 @@ if ($action === 'promissory-document-file' && $method === 'GET') {
 if ($action === 'promissory-notes' && $method === 'POST') { $u=require_user(['superadmin','operador']);verify_csrf();$v=body();$a=(int)($v['associate_id']??0);$credit=(int)($v['credit_application_id']??0);$number=substr(clean($v['note_number']??''),0,100);if(!$a||!$credit||!$number)json_response(['error'=>'Asociado, crédito aprobado y número de pagaré son obligatorios.'],422);$check=$db->prepare('SELECT id FROM credit_applications WHERE id=? AND associate_id=? AND status IN ("aprobada","desembolsada")');$check->execute([$credit,$a]);if(!$check->fetchColumn())json_response(['error'=>'Selecciona un crédito aprobado que pertenezca a este asociado.'],422);queue_operator_change($db,$u,'promissory_note_create','Registrar pagaré ' . $number,$v);try{$q=$db->prepare('INSERT INTO promissory_notes(associate_id,credit_application_id,note_number,status,notes,created_by)VALUES(?,?,?,?,?,?)');$q->execute([$a,$credit,$number,'borrador',substr(clean($v['notes']??''),0,255),$u['id']]);audit($db,$u['id'],'pagare',(int)$db->lastInsertId(),'crear',$number);json_response(['ok'=>true],201);}catch(Throwable $e){json_response(['error'=>'Ese número de pagaré ya existe.'],422);}}
 if ($action === 'dashboard' && $method === 'GET') { require_user();json_response(['metrics'=>['asociados'=>(int)$db->query('SELECT COUNT(*) FROM associates WHERE status="activo"')->fetchColumn(),'afiliaciones_pendientes'=>(int)$db->query('SELECT COUNT(*) FROM affiliation_requests WHERE status="en_revision"')->fetchColumn(),'pagos_aplicados'=>(float)$db->query('SELECT COALESCE(SUM(amount),0) FROM payments WHERE status="aplicado"')->fetchColumn(),'cartera_abierta'=>(float)$db->query('SELECT COALESCE(SUM(amount),0) FROM receivables WHERE status IN ("por_vencer","vencida")')->fetchColumn()]]); }
 if ($action === 'users' && $method === 'GET') { require_user(['superadmin']);json_response(['users'=>$db->query('SELECT id,full_name,email,role,active,created_at FROM internal_users ORDER BY full_name')->fetchAll()]); }
-if ($action === 'users' && $method === 'POST') { $u=require_user(['superadmin']);verify_csrf();$v=body();$name=substr(clean($v['full_name']??''),0,160);$email=strtolower(substr(clean($v['email']??''),0,190));$role=clean($v['role']??'');$password=(string)($v['password']??'');if(!$name||!filter_var($email,FILTER_VALIDATE_EMAIL)||!in_array($role,FEGCON_ROLES,true)||strlen($password)<12)json_response(['error'=>'Completa nombre, correo, rol y una contraseña de mínimo 12 caracteres.'],422);if($role==='superadmin'&&(int)$db->query('SELECT COUNT(*) FROM internal_users WHERE role="superadmin" AND active=1')->fetchColumn()>0)json_response(['error'=>'La cuenta Superadmin es única. Solo se pueden crear cuentas Operador.'],422);try{$q=$db->prepare('INSERT INTO internal_users(full_name,email,password_hash,role)VALUES(?,?,?,?)');$q->execute([$name,$email,password_hash($password,PASSWORD_DEFAULT),$role]);audit($db,$u['id'],'usuario',(int)$db->lastInsertId(),'crear',$email);json_response(['ok'=>true],201);}catch(Throwable $e){json_response(['error'=>'Ese correo ya está registrado.'],422);}}
+if ($action === 'users' && $method === 'POST') { $u=require_user(['superadmin']);verify_csrf();$v=body();$name=substr(clean($v['full_name']??''),0,160);$email=strtolower(substr(clean($v['email']??''),0,190));$role=clean($v['role']??'');$password=(string)($v['password']??'');if(!$name||!filter_var($email,FILTER_VALIDATE_EMAIL)||$role!=='operador'||strlen($password)<12)json_response(['error'=>'Completa nombre, correo y una contraseña de mínimo 12 caracteres para crear una cuenta Operador.'],422);try{$q=$db->prepare('INSERT INTO internal_users(full_name,email,password_hash,role)VALUES(?,?,?,"operador")');$q->execute([$name,$email,password_hash($password,PASSWORD_DEFAULT)]);audit($db,$u['id'],'usuario',(int)$db->lastInsertId(),'crear',$email);json_response(['ok'=>true],201);}catch(Throwable $e){json_response(['error'=>'Ese correo ya está registrado.'],422);}}
+if ($action === 'users' && $method === 'PATCH') {
+    $current=require_user(['superadmin']);verify_csrf();$payload=body();$id=(int)($payload['id']??0);$active=filter_var($payload['active']??null,FILTER_VALIDATE_BOOLEAN,FILTER_NULL_ON_FAILURE);
+    if(!$id||$active===null)json_response(['error'=>'Selecciona una cuenta Operador y el estado que deseas aplicar.'],422);
+    if($id===$current['id'])json_response(['error'=>'No puedes desactivar tu propia cuenta Superadmin.'],422);
+    $q=$db->prepare('SELECT id,full_name,email,role,active FROM internal_users WHERE id=? LIMIT 1');$q->execute([$id]);$target=$q->fetch();
+    if(!$target||$target['role']!=='operador')json_response(['error'=>'Solo puedes cambiar el estado de cuentas Operador.'],422);
+    $q=$db->prepare('UPDATE internal_users SET active=? WHERE id=?');$q->execute([$active?1:0,$id]);
+    audit($db,$current['id'],'usuario',$id,$active?'activar':'desactivar',$target['email']);
+    json_response(['ok'=>true,'user'=>['id'=>$id,'active'=>$active?1:0],'message'=>$active?'Acceso del Operador activado.':'Acceso del Operador suspendido.']);
+}
 if ($action === 'audit-log' && $method === 'GET') { require_user(['superadmin']);$rows=$db->query('SELECT l.id,l.entity,l.entity_id,l.action,l.detail,l.created_at,u.full_name AS user_name FROM audit_log l LEFT JOIN internal_users u ON u.id=l.user_id ORDER BY l.created_at DESC,l.id DESC LIMIT 200')->fetchAll();json_response(['entries'=>$rows]); }
 if ($action === 'receivables' && $method === 'GET') {
     require_user();

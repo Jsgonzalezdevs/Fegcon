@@ -2,8 +2,6 @@
 declare(strict_types=1);
 
 /** Shared hosting API bootstrap. Compatible with PHP 7.4+. */
-const FEGCON_ROLES = ['superadmin', 'operador'];
-
 function config(): array {
     $path = dirname($_SERVER['DOCUMENT_ROOT'], 2) . '/.fegcon-admin.php';
     if (!is_file($path)) {
@@ -88,7 +86,15 @@ function clean($value): string { return is_string($value) ? trim($value) : ''; }
 
 function user(): ?array {
     start_session();
-    return isset($_SESSION['user']) && is_array($_SESSION['user']) ? $_SESSION['user'] : null;
+    if (!isset($_SESSION['user']) || !is_array($_SESSION['user'])) return null;
+    $stmt = db()->prepare('SELECT active FROM internal_users WHERE id=? LIMIT 1');
+    $stmt->execute([(int) ($_SESSION['user']['id'] ?? 0)]);
+    if (!(int) $stmt->fetchColumn()) {
+        $_SESSION = [];
+        session_destroy();
+        return null;
+    }
+    return $_SESSION['user'];
 }
 
 function require_user(array $roles = []): array {
