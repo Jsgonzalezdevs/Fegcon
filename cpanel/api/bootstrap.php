@@ -70,9 +70,20 @@ function db(): PDO {
     $pdo->exec("CREATE TABLE IF NOT EXISTS credit_applications (id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY, associate_id INT UNSIGNED NOT NULL, product_id INT UNSIGNED NOT NULL, requested_amount DECIMAL(14,2) NOT NULL, requested_term_months INT UNSIGNED NOT NULL, purpose VARCHAR(255) NULL, status ENUM('borrador','en_revision','aprobada','rechazada','desembolsada') NOT NULL DEFAULT 'en_revision', created_by INT UNSIGNED NOT NULL, reviewed_by INT UNSIGNED NULL, reviewed_at TIMESTAMP NULL, decision_note VARCHAR(255) NULL, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (associate_id) REFERENCES associates(id), FOREIGN KEY (product_id) REFERENCES financial_products(id), FOREIGN KEY (created_by) REFERENCES internal_users(id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
     try { $pdo->exec('ALTER TABLE credit_applications ADD COLUMN reviewed_by INT UNSIGNED NULL, ADD COLUMN reviewed_at TIMESTAMP NULL, ADD COLUMN decision_note VARCHAR(255) NULL'); } catch (Throwable $ignored) {}
     try { $pdo->exec('ALTER TABLE credit_applications ADD COLUMN approved_multiplier TINYINT UNSIGNED NULL, ADD COLUMN monthly_installment DECIMAL(14,2) NULL'); } catch (Throwable $ignored) {}
+    foreach (['disbursed_on' => 'DATE NULL', 'first_due_date' => 'DATE NULL'] as $column => $definition) {
+        $check = $pdo->prepare('SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name=? AND column_name=?');
+        $check->execute(['credit_applications', $column]);
+        if (!(int) $check->fetchColumn()) $pdo->exec('ALTER TABLE credit_applications ADD COLUMN ' . $column . ' ' . $definition);
+    }
+    $pdo->exec("CREATE TABLE IF NOT EXISTS credit_installments (id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY, credit_application_id BIGINT UNSIGNED NOT NULL, installment_number SMALLINT UNSIGNED NOT NULL, due_date DATE NOT NULL, principal_amount DECIMAL(14,2) NOT NULL, interest_amount DECIMAL(14,2) NOT NULL, total_amount DECIMAL(14,2) NOT NULL, paid_amount DECIMAL(14,2) NOT NULL DEFAULT 0, status ENUM('pendiente','pagada','anulada') NOT NULL DEFAULT 'pendiente', created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (credit_application_id) REFERENCES credit_applications(id), UNIQUE KEY credit_installment_number (credit_application_id,installment_number), KEY credit_installment_due (due_date,status)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
     $pdo->exec("CREATE TABLE IF NOT EXISTS affiliation_requests (id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY, document_number VARCHAR(50) NOT NULL UNIQUE, first_name VARCHAR(100) NOT NULL, last_name VARCHAR(100) NOT NULL, email VARCHAR(190) NULL, phone VARCHAR(50) NULL, company_name VARCHAR(190) NULL, documents_status ENUM('pendientes','completos') NOT NULL DEFAULT 'pendientes', status ENUM('en_revision','aprobada','rechazada') NOT NULL DEFAULT 'en_revision', created_by INT UNSIGNED NOT NULL, reviewed_by INT UNSIGNED NULL, reviewed_at TIMESTAMP NULL, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (created_by) REFERENCES internal_users(id), FOREIGN KEY (reviewed_by) REFERENCES internal_users(id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
     $pdo->exec("CREATE TABLE IF NOT EXISTS configuration_catalog (id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY, category VARCHAR(80) NOT NULL, label VARCHAR(190) NOT NULL, payload LONGTEXT NOT NULL, active TINYINT(1) NOT NULL DEFAULT 1, created_by INT UNSIGNED NULL, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, UNIQUE KEY category_label (category,label)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
     $pdo->exec("CREATE TABLE IF NOT EXISTS payments (id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY, associate_id INT UNSIGNED NOT NULL, payment_method_id INT UNSIGNED NULL, concept VARCHAR(150) NOT NULL, amount DECIMAL(14,2) NOT NULL, reference VARCHAR(100) NULL, status ENUM('pendiente','aplicado','anulado') NOT NULL DEFAULT 'aplicado', received_on DATE NOT NULL, recorded_by INT UNSIGNED NOT NULL, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (associate_id) REFERENCES associates(id), FOREIGN KEY (payment_method_id) REFERENCES configuration_catalog(id), FOREIGN KEY (recorded_by) REFERENCES internal_users(id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    foreach (['credit_installment_id' => 'BIGINT UNSIGNED NULL'] as $column => $definition) {
+        $check = $pdo->prepare('SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name=? AND column_name=?');
+        $check->execute(['payments', $column]);
+        if (!(int) $check->fetchColumn()) $pdo->exec('ALTER TABLE payments ADD COLUMN ' . $column . ' ' . $definition);
+    }
     $pdo->exec("CREATE TABLE IF NOT EXISTS receivables (id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY, associate_id INT UNSIGNED NOT NULL, reference VARCHAR(100) NOT NULL, due_date DATE NOT NULL, amount DECIMAL(14,2) NOT NULL, status ENUM('por_vencer','vencida','pagada','anulada') NOT NULL DEFAULT 'por_vencer', created_by INT UNSIGNED NOT NULL, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (associate_id) REFERENCES associates(id), FOREIGN KEY (created_by) REFERENCES internal_users(id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
     $pdo->exec("CREATE TABLE IF NOT EXISTS payroll_collections (id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY, period_label VARCHAR(100) NOT NULL, expected_amount DECIMAL(14,2) NOT NULL DEFAULT 0, collected_amount DECIMAL(14,2) NOT NULL DEFAULT 0, status ENUM('borrador','enviado','recibido','conciliado') NOT NULL DEFAULT 'borrador', created_by INT UNSIGNED NOT NULL, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (created_by) REFERENCES internal_users(id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
     foreach (['company_id' => 'INT UNSIGNED NULL', 'collection_date' => 'DATE NULL'] as $column => $definition) {
@@ -159,6 +170,34 @@ function active_savings_components(PDO $db, int $associateId, bool $lockAssociat
     $balance->execute([$associateId]);
     $row = $balance->fetch() ?: [];
     return ['vista' => (float)($row['vista'] ?? 0), 'aportes' => (float)($row['aportes'] ?? 0)];
+}
+
+function valid_iso_date(string $value): bool {
+    $date = DateTimeImmutable::createFromFormat('!Y-m-d', $value);
+    return $date instanceof DateTimeImmutable && $date->format('Y-m-d') === $value;
+}
+
+function create_credit_installments(PDO $db, int $creditId, float $principal, int $months, float $monthlyPayment, string $firstDueDate): void {
+    if (!valid_iso_date($firstDueDate) || $principal <= 0 || $months < 1 || $months > 60) {
+        throw new RuntimeException('La fecha de primera cuota o el plazo no son válidos.');
+    }
+    $first = new DateTimeImmutable($firstDueDate);
+    $day = (int)$first->format('d');
+    $balance = round($principal, 2);
+    $insert = $db->prepare('INSERT INTO credit_installments(credit_application_id,installment_number,due_date,principal_amount,interest_amount,total_amount) VALUES(?,?,?,?,?,?)');
+    for ($number = 1; $number <= $months; $number++) {
+        $monthIndex = ((int)$first->format('Y') * 12) + ((int)$first->format('n') - 1) + ($number - 1);
+        $year = intdiv($monthIndex, 12); $monthNumber = ($monthIndex % 12) + 1;
+        $month = new DateTimeImmutable(sprintf('%04d-%02d-01', $year, $monthNumber));
+        $dueDate = $month->setDate($year, $monthNumber, min($day, (int)$month->format('t')))->format('Y-m-d');
+        $interest = round($balance * 0.02, 2);
+        $principalDue = $number === $months ? $balance : min($balance, round($monthlyPayment - $interest, 2));
+        if ($principalDue <= 0) throw new RuntimeException('La cuota aprobada no alcanza a amortizar el capital.');
+        $total = round($principalDue + $interest, 2);
+        $insert->execute([$creditId,$number,$dueDate,$principalDue,$interest,$total]);
+        $balance = round(max(0, $balance - $principalDue), 2);
+    }
+    if ($balance > 0.01) throw new RuntimeException('El plan de cuotas no cubre el saldo total.');
 }
 
 function record_savings_transaction(PDO $db, int $associateId, int $productId, string $type, float $amount, string $reference, int $userId): int {
@@ -248,6 +287,13 @@ function apply_approved_change(PDO $db, int $requesterId, int $reviewerId, strin
             $q=$db->prepare('SELECT associate_id,requested_amount,requested_term_months FROM credit_applications WHERE id=? AND status="en_revision"');$q->execute([$id]);$application=$q->fetch();if(!$application)throw new RuntimeException('La solicitud ya fue procesada.');$multiplier=(int)($v['multiplier']??0);$monthly=null;if($status==='aprobada'){if(!in_array($multiplier,[3,4,5],true))throw new RuntimeException('Selecciona el cupo aprobado: 3, 4 o 5 veces los aportes.');$balance=active_savings_components($db,(int)$application['associate_id'],true);$base=max(0,$balance['aportes']);if((float)$application['requested_amount']>$base*$multiplier)throw new RuntimeException('El monto solicitado supera el cupo del multiplicador elegido.');$term=(int)$application['requested_term_months'];$principal=(float)$application['requested_amount'];$monthly=$principal*.02/(1-pow(1.02,-$term));}
             $q=$db->prepare('UPDATE credit_applications SET status=?,reviewed_by=?,reviewed_at=NOW(),decision_note=?,approved_multiplier=?,monthly_installment=? WHERE id=? AND status="en_revision"');$q->execute([$status,$reviewerId,substr(clean($v['note']??''),0,255),$status==='aprobada'?$multiplier:null,$monthly,$id]);if(!$q->rowCount())throw new RuntimeException('La solicitud ya fue procesada.');
             audit($db,$reviewerId,'credito',$id,$status,'Decisión aprobada'); return ['entity'=>'credito','id'=>$id];
+        case 'credit_disbursement':
+            $id=(int)($v['id']??0);$disbursedOn=clean($v['disbursed_on']??'');$firstDueDate=clean($v['first_due_date']??'');
+            if(!$id||!valid_iso_date($disbursedOn)||!valid_iso_date($firstDueDate)||$firstDueDate<=$disbursedOn)throw new RuntimeException('Indica la fecha real del desembolso y una primera cuota posterior.');
+            $q=$db->prepare('SELECT requested_amount,requested_term_months,monthly_installment FROM credit_applications WHERE id=? AND status="aprobada" FOR UPDATE');$q->execute([$id]);$credit=$q->fetch();if(!$credit||!$credit['monthly_installment'])throw new RuntimeException('Solo se puede desembolsar un crédito aprobado con cuota calculada.');
+            $q=$db->prepare('UPDATE credit_applications SET status="desembolsada",disbursed_on=?,first_due_date=? WHERE id=? AND status="aprobada"');$q->execute([$disbursedOn,$firstDueDate,$id]);if(!$q->rowCount())throw new RuntimeException('El crédito ya fue desembolsado o cambió de estado.');
+            create_credit_installments($db,$id,(float)$credit['requested_amount'],(int)$credit['requested_term_months'],(float)$credit['monthly_installment'],$firstDueDate);
+            audit($db,$reviewerId,'credito',$id,'desembolsar',$disbursedOn.' · primera cuota '.$firstDueDate);return ['entity'=>'credito','id'=>$id];
         case 'affiliation_create':
             $doc=substr(clean($v['document_number']??''),0,50);$first=substr(clean($v['first_name']??''),0,100);$last=substr(clean($v['last_name']??''),0,100);if(!$doc||!$first||!$last)throw new RuntimeException('Datos de afiliación incompletos.');
             $q=$db->prepare('INSERT INTO affiliation_requests(document_number,first_name,last_name,email,phone,company_name,documents_status,created_by) VALUES(?,?,?,?,?,?,?,?)');$q->execute([$doc,$first,$last,substr(clean($v['email']??''),0,190),substr(clean($v['phone']??''),0,50),substr(clean($v['company']??''),0,190),clean($v['documents_status']??'pendientes')==='completos'?'completos':'pendientes',$requesterId]);
@@ -259,7 +305,8 @@ function apply_approved_change(PDO $db, int $requesterId, int $reviewerId, strin
             $q=$db->prepare('UPDATE affiliation_requests SET status=?,reviewed_by=?,reviewed_at=NOW() WHERE id=?');$q->execute([$status,$reviewerId,$id]);audit($db,$reviewerId,'afiliacion',$id,$status,'Decisión aprobada');return ['entity'=>'afiliacion','id'=>$id];
         case 'payment_create':
             $associate=(int)($v['associate_id']??0);$amount=(float)($v['amount']??0);$concept=substr(clean($v['concept']??''),0,150);if(!$associate||$amount<=0||!$concept)throw new RuntimeException('Datos de pago incompletos.');
-            $q=$db->prepare('INSERT INTO payments(associate_id,payment_method_id,concept,amount,reference,received_on,recorded_by) VALUES(?,?,?,?,?,?,?)');$q->execute([$associate,(int)($v['payment_method_id']??0)?:null,$concept,$amount,substr(clean($v['reference']??''),0,100),clean($v['received_on']??'')?:date('Y-m-d'),$requesterId]);$id=(int)$db->lastInsertId();audit($db,$reviewerId,'pago',$id,'registrar_aprobado',$concept);return ['entity'=>'pago','id'=>$id];
+            $installmentId=(int)($v['credit_installment_id']??0);if($installmentId){$q=$db->prepare('SELECT i.total_amount,i.paid_amount,i.status,c.associate_id FROM credit_installments i JOIN credit_applications c ON c.id=i.credit_application_id WHERE i.id=? AND c.status="desembolsada" FOR UPDATE');$q->execute([$installmentId]);$installment=$q->fetch();if(!$installment||(int)$installment['associate_id']!==$associate||$installment['status']!=='pendiente')throw new RuntimeException('La cuota ya fue pagada o no pertenece a este asociado.');$remaining=round((float)$installment['total_amount']-(float)$installment['paid_amount'],2);if($amount>$remaining)throw new RuntimeException('El pago supera el saldo pendiente de esta cuota.');$paid=round((float)$installment['paid_amount']+$amount,2);$installmentStatus=$paid+0.001>=(float)$installment['total_amount']?'pagada':'pendiente';$q=$db->prepare('UPDATE credit_installments SET paid_amount=?,status=? WHERE id=?');$q->execute([$paid,$installmentStatus,$installmentId]);}
+            $q=$db->prepare('INSERT INTO payments(associate_id,credit_installment_id,payment_method_id,concept,amount,reference,received_on,recorded_by) VALUES(?,?,?,?,?,?,?,?)');$q->execute([$associate,$installmentId?:null,(int)($v['payment_method_id']??0)?:null,$concept,$amount,substr(clean($v['reference']??''),0,100),clean($v['received_on']??'')?:date('Y-m-d'),$requesterId]);$id=(int)$db->lastInsertId();audit($db,$reviewerId,'pago',$id,'registrar_aprobado',$concept);return ['entity'=>'pago','id'=>$id];
         case 'payroll_collection_create':
             $company=(int)($v['company_id']??0);$date=clean($v['collection_date']??'');$parsed=DateTimeImmutable::createFromFormat('!Y-m-d',$date);$dateValid=$parsed&&$parsed->format('Y-m-d')===$date;$day=$dateValid?(int)$parsed->format('d'):0;if(!$company||!$dateValid||!in_array($day,[10,20],true))throw new RuntimeException('Selecciona una empresa y un día de cobro 10 o 20.');$q=$db->prepare('SELECT name FROM companies WHERE id=? AND active=1');$q->execute([$company]);$companyName=$q->fetchColumn();if(!$companyName)throw new RuntimeException('La empresa no existe o está inactiva.');$period=substr(clean($v['period_label']??($companyName.' · '.$date)),0,100);$q=$db->prepare('SELECT id FROM payroll_collections WHERE company_id=? AND collection_date=? LIMIT 1');$q->execute([$company,$date]);if($q->fetchColumn())throw new RuntimeException('Ya existe una relación para esta empresa y fecha.');$q=$db->prepare('INSERT INTO payroll_collections(company_id,collection_date,period_label,expected_amount,created_by) VALUES(?,?,?,?,?)');$q->execute([$company,$date,$period,0,$requesterId]);$id=(int)$db->lastInsertId();audit($db,$reviewerId,'cobro_nomina',$id,'crear_aprobado',$period);return ['entity'=>'cobro_nomina','id'=>$id];
         case 'payroll_item_create':

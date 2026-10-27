@@ -12,15 +12,15 @@ Los operadores pueden proponer operaciones; la Superadmin debe aprobarlas para a
 
 - Node.js 22.13 o superior
 - pnpm
+- PHP y MySQL en el cPanel donde se instala la aplicación
 
 ## Compilar para cPanel
 
 ```sh
 pnpm install
-pnpm run build:static
-node scripts/build-cpanel.mjs
+pnpm run build:cpanel
 ```
 
-El paquete completo queda en `release/`. Sube el contenido de `release/public/` a la raíz del subdominio de administración. Importa `release/database/001_core.sql` en la base de datos del cPanel, configura `api/config.php` según las instrucciones del hosting y ejecuta `setup.php` una vez para crear la cuenta Superadmin. Elimina `setup.php` después de la instalación.
+El paquete listo para subir queda en `release/`. Para una instalación nueva, crea una base MySQL vacía, importa `release/database/001_core.sql`, sube el contenido de `release/public/` al subdominio y ejecuta `setup.php` una sola vez para crear la cuenta Superadmin. El instalador guarda la conexión en un archivo privado fuera de `public_html`; no crees ni subas `api/config.php`. Elimina `setup.php` al terminar.
 
-Las instrucciones detalladas están en [cpanel/README.md](cpanel/README.md). No subas secretos, copias de documentos ni datos de asociados al repositorio.
+Las instrucciones detalladas y el procedimiento de actualización están en [cpanel/README.md](cpanel/README.md). Actualizar los archivos conserva los datos de la base existente; para iniciar en cero, instala en una base vacía nueva. No subas secretos, copias de documentos ni datos de asociados al repositorio.

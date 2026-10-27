@@ -41,6 +41,8 @@ Antes de operar, la Superadmin debe configurar:
 
 - Las solicitudes del Operador se aplican solo después de la aprobación de la Superadmin.
 - La instalación parte sin asociados, saldos, solicitudes, pagos, pagarés ni relaciones de cobro de ejemplo. El primer inicio muestra ceros y estados vacíos hasta ingresar datos reales.
+- Al aprobar un crédito, la Superadmin u Operador inicia el desembolso indicando las fechas reales. La aprobación de la Superadmin deja el crédito desembolsado y genera el plan mensual con tasa fija del 2% sobre saldo pendiente; la última cuota ajusta los centavos de redondeo.
+- Las cuotas programadas aparecen en Cartera. En Pagos se puede vincular un recaudo a una cuota, y el sistema actualiza su saldo pagado; los pagos generales quedan en el historial sin alterar cuotas.
 - Los documentos del pagaré se guardan fuera de la carpeta pública y su descarga requiere una sesión autorizada. FEGCON aún debe definir los nombres oficiales de los aproximadamente siete documentos.
 - Nómina permite preparar la relación por empresa para el día 10 o 20, agregar los conceptos reales por asociado, descargar un CSV y registrar el recaudo por línea. El valor por aporte, convenio y período se ingresa explícitamente porque FEGCON no definió una tarifa fija ni cómo dividir una cuota mensual entre quincenas.
 - El sistema no envía WhatsApp automáticamente. El envío al asociado y a la empresa se realiza por los canales actuales; el CSV sirve para preparar la relación de libranza.
