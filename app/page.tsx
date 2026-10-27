@@ -517,7 +517,7 @@ function PayrollCollectionsScreen({ csrf, go }: { csrf: string; go: (view: View)
 
 const liveScreens = {
   afiliaciones: { eyebrow: "VINCULACIÓN", title: "Afiliaciones", text: "Solicitudes de afiliación registradas en el sistema.", action: "Nueva solicitud", heads: ["Solicitante", "Empresa", "Fecha", "Documentos", "Estado"], endpoint: "affiliations", key: "requests" },
-  cartera: { eyebrow: "SEGUIMIENTO", title: "Cartera", text: "Obligaciones registradas y fechas de vencimiento.", action: "Nueva obligación", heads: ["Asociado", "Obligación", "Vencimiento", "Valor", "Estado"], endpoint: "receivables", key: "receivables" },
+  cartera: { eyebrow: "SEGUIMIENTO", title: "Cartera", text: "Consulta vencimientos, días en mora e interés estimado con la tasa de usura del mes.", action: "Nueva obligación", heads: ["Asociado", "Obligación", "Vencimiento", "Capital de cuota", "Días en mora", "Mora estimada", "Estado"], endpoint: "receivables", key: "receivables" },
   convenios: { eyebrow: "BENEFICIOS", title: "Convenios", text: "Convenios que FEGCON haya registrado.", action: "Nuevo convenio", heads: ["Convenio", "Beneficio", "Vigencia", "Estado"], endpoint: "catalog&category=convenio", key: "items" },
   pagos: { eyebrow: "RECAUDO", title: "Pagos", text: "Pagos registrados en la base de datos.", action: "Registrar pago", heads: ["Fecha", "Asociado", "Concepto", "Valor", "Estado"], endpoint: "payments", key: "payments" },
 } as const;
@@ -531,7 +531,7 @@ function ListScreen({ view, csrf, role, go }: { view: View; csrf: string; role: 
     const source = data[screen.key] || [];
     const mapped: LiveRow[] = source.map((row: ApiJson) => {
       if (view === "afiliaciones") return { id: row.id, cells: [`${row.first_name} ${row.last_name}`, row.company_name || "Sin empresa", new Date(row.created_at).toLocaleDateString("es-CO"), row.documents_status === "completos" ? "Completos" : "Pendientes"], status: row.status };
-      if (view === "cartera") { const overdue = row.status === "vencida" || (row.status === "por_vencer" && row.due_date < new Date().toISOString().slice(0, 10)); return { id: row.id, cells: [`${row.first_name} ${row.last_name}`, row.reference, row.due_date, money(Number(row.amount))], status: overdue ? "Vencida" : row.status } }
+      if (view === "cartera") { const days = Number(row.days_overdue || 0); return { id: row.id, cells: [`${row.first_name} ${row.last_name}`, row.reference, row.due_date, money(Number(row.amount)), `${days} días`, days > 0 && row.late_interest == null ? "Falta tasa del mes" : money(Number(row.late_interest || 0))], status: row.status } }
       if (view === "pagos") return { id: row.id, cells: [row.received_on, `${row.first_name} ${row.last_name}`, row.concept, money(Number(row.amount))], status: row.status };
       const payload = row.payload || {}; return { id: row.id, cells: [row.label, payload.benefit || "Sin descripción", payload.end_date || "Sin fecha de vencimiento"], status: Number(row.active) ? "Activo" : "Inactivo" };
     });
