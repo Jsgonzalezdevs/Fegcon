@@ -141,6 +141,28 @@ if ($action === 'associates' && $method === 'POST') {
     }
 }
 
+if ($action === 'associates' && $method === 'PATCH') {
+    $current = require_user(['superadmin', 'operador']); verify_csrf(); $v = body();
+    $id=(int)($v['id']??0);$first=clean($v['firstName']??'');$last=clean($v['lastName']??'');$document=clean($v['documentNumber']??'');$email=clean($v['email']??'');
+    if(!$id||!$first||!$last||!$document)json_response(['error'=>'Nombres, apellidos y documento son obligatorios.'],422);
+    if($email!==''&&!filter_var($email,FILTER_VALIDATE_EMAIL))json_response(['error'=>'El correo electrónico no es válido.'],422);
+    queue_operator_change($db,$current,'associate_update','Actualizar datos del asociado '.$document,$v);
+    try {
+        $db->beginTransaction();$exists=$db->prepare('SELECT id FROM associates WHERE id=? FOR UPDATE');$exists->execute([$id]);if(!$exists->fetchColumn())throw new RuntimeException('El asociado no existe.');
+        $companyId=null;$companyName=clean($v['company']??'');if($companyName!==''){$q=$db->prepare('SELECT id FROM companies WHERE name=? LIMIT 1');$q->execute([$companyName]);$companyId=$q->fetchColumn();if(!$companyId){$q=$db->prepare('INSERT INTO companies(name) VALUES(?)');$q->execute([$companyName]);$companyId=(int)$db->lastInsertId();}}
+        $q=$db->prepare('UPDATE associates SET document_type=?,document_number=?,first_name=?,last_name=?,email=?,phone=?,company_id=? WHERE id=?');$q->execute([clean($v['documentType']??'')?:'CC',$document,$first,$last,$email?:null,clean($v['phone']??'')?:null,$companyId?:null,$id]);
+        $q=$db->prepare('INSERT INTO associate_events(associate_id,event_type,title,description,created_by) VALUES (?,"actualizacion","Datos actualizados","La Superadmin actualizó los datos del asociado.",?)');$q->execute([$id,$current['id']]);audit($db,$current['id'],'asociado',$id,'actualizar',$document);$db->commit();json_response(['ok'=>true,'message'=>'Datos del asociado actualizados.']);
+    } catch (Throwable $error) { if($db->inTransaction())$db->rollBack();json_response(['error'=>$error instanceof RuntimeException?$error->getMessage():'No fue posible actualizar el asociado.'],422); }
+}
+
+if ($action === 'associates' && $method === 'DELETE') {
+    $current=require_user(['superadmin','operador']);verify_csrf();$id=(int)($_GET['id']??0);if(!$id)json_response(['error'=>'Selecciona el asociado que deseas retirar.'],422);
+    $lookup=$db->prepare('SELECT first_name,last_name,document_number FROM associates WHERE id=? AND status="activo"');$lookup->execute([$id]);$person=$lookup->fetch();if(!$person)json_response(['error'=>'El asociado ya fue retirado o no existe.'],422);
+    queue_operator_change($db,$current,'associate_retire','Retirar a '.$person['first_name'].' '.$person['last_name'],['id'=>$id,'name'=>$person['first_name'].' '.$person['last_name'],'documentNumber'=>$person['document_number']]);
+    try {$db->beginTransaction();$q=$db->prepare('UPDATE associates SET status="retirado" WHERE id=? AND status="activo"');$q->execute([$id]);if(!$q->rowCount())throw new RuntimeException('El asociado ya fue retirado o no existe.');$q=$db->prepare('INSERT INTO associate_events(associate_id,event_type,title,description,created_by) VALUES (?,"retiro","Asociado retirado","La Superadmin autorizó el retiro del asociado.",?)');$q->execute([$id,$current['id']]);audit($db,$current['id'],'asociado',$id,'retirar','');$db->commit();json_response(['ok'=>true,'message'=>'Asociado retirado. El historial financiero se conservó.']);}
+    catch (Throwable $error) {if($db->inTransaction())$db->rollBack();json_response(['error'=>$error instanceof RuntimeException?$error->getMessage():'No fue posible retirar el asociado.'],422);}
+}
+
 if ($action === 'settings' && $method === 'GET') {
     require_user(['superadmin']);
     $rows = $db->query('SELECT setting_key, setting_value FROM app_settings')->fetchAll();
