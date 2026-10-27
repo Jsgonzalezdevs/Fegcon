@@ -1,14 +1,35 @@
-# Despliegue sin coste adicional en cPanel
+# Despliegue de Gestión FEGCON en cPanel
 
-Este paquete usa MySQL y PHP del hosting. No requiere Node.js, Composer ni servicios externos.
+La aplicación usa PHP y MySQL del hosting. No requiere Node.js ni Composer en cPanel. Node.js 22.13 o superior y pnpm solo se necesitan en el equipo que prepara el paquete.
 
-1. Ejecute `npm run build:static` en el proyecto local.
-2. Suba el contenido de `release/public/` a `public_html/admin.fegcon.com.co/`.
-3. Suba la carpeta `cpanel/api/` al mismo directorio como `api/`, y suba `.htaccess`.
-4. En phpMyAdmin, seleccione `fegconco_admin` e importe `cpanel/database/001_core.sql`.
-5. Suba `cpanel/setup.php` temporalmente a la raíz del subdominio. Visite `https://admin.fegcon.com.co/setup.php`, introduzca las credenciales de MySQL y cree el primer administrador.
-6. Elimine `setup.php` inmediatamente desde File Manager.
+## Preparar el paquete
 
-Nunca suba ni deje dentro de `public_html` el archivo `.fegcon-admin.php`: el instalador lo crea dos niveles por encima del directorio público. Guarde la contraseña de MySQL y del administrador en un gestor de contraseñas.
+Desde la raíz del repositorio:
 
-La instalación crea una cuenta Superadmin única. Las demás cuentas son Operadores: toda escritura operativa que pueden iniciar queda pendiente de aprobación. Las reglas financieras quedan cerradas para el Operador.
+```sh
+pnpm install
+pnpm run build:static
+node scripts/build-cpanel.mjs
+```
+
+El paquete queda en `release/`. El script copia la interfaz, la API PHP, `.htaccess`, el instalador y el SQL a las carpetas correspondientes.
+
+## Instalar en el hosting
+
+1. En cPanel, crea una base de datos MySQL y un usuario con todos los permisos sobre esa base.
+2. Importa `release/database/001_core.sql` desde phpMyAdmin.
+3. Sube el contenido de `release/public/` a la raíz del subdominio del administrador. Deben quedar juntos `index.html`, `.htaccess`, `setup.php`, la carpeta `assets/` y la carpeta `api/`.
+4. Abre `api/config.php` en el hosting y completa el nombre de base de datos, el usuario y la contraseña de MySQL. Protege ese archivo y no lo publiques en GitHub.
+5. Visita `https://TU-SUBDOMINIO/setup.php`, crea la primera cuenta Superadmin y guarda su contraseña en un gestor seguro.
+6. Elimina `setup.php` desde el Administrador de archivos de cPanel después de crear la cuenta.
+7. Inicia sesión y verifica que asociados, afiliaciones, movimientos, créditos, cartera, pagos, pagarés y cobros estén vacíos. Los productos y las reglas base de FEGCON se inicializan automáticamente al conectar la API.
+
+Una instalación nueva no carga ejemplos. Solo se crean los productos institucionales: aportes (30% a la vista y 70% aportes) y libre inversión (2% mensual sobre saldo pendiente, plazo de 1 a 60 meses).
+
+Los operadores no aplican cambios directamente: cada alta, cambio o decisión operativa que registren queda en espera de aprobación Superadmin. La Superadmin crea las cuentas Operador y aprueba o rechaza esas solicitudes.
+
+## Actualización de una instalación existente
+
+Prepara el mismo paquete y reemplaza los archivos de la raíz del subdominio con el contenido de `release/public/`. Conserva `api/config.php` y la base de datos actuales. Revisa el estado de los registros antes del cambio: esta actualización no borra datos existentes. Para vaciar una base con datos de prueba, primero exporta una copia y elimina únicamente los registros que se hayan identificado como pruebas.
+
+No subas copias de pagarés, documentos de asociados, contraseñas ni archivos de configuración con secretos al repositorio o al paquete público.
