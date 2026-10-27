@@ -28,6 +28,10 @@ Una instalación nueva no carga ejemplos. Solo se crean los productos institucio
 
 Los operadores no aplican cambios directamente: cada alta, cambio o decisión operativa que registren queda en espera de aprobación Superadmin. La Superadmin crea las cuentas Operador y aprueba o rechaza esas solicitudes.
 
+## Custodia privada de pagarés
+
+Al cargar el primer escaneo, la API crea `fegcon-private-documents` en la carpeta de la cuenta de hosting, fuera de `public_html`. El usuario de PHP debe poder crear esa carpeta y escribir en ella. Los archivos se aceptan en PDF, JPG o PNG hasta 15 MB y se sirven únicamente tras verificar la sesión interna. El Operador puede proponer una carga o retiro; la Superadmin revisa cada cambio.
+
 ## Actualización de una instalación existente
 
 Prepara el mismo paquete y reemplaza los archivos de la raíz del subdominio con el contenido de `release/public/`. Conserva `api/config.php` y la base de datos actuales. Revisa el estado de los registros antes del cambio: esta actualización no borra datos existentes. Para vaciar una base con datos de prueba, primero exporta una copia y elimina únicamente los registros que se hayan identificado como pruebas.

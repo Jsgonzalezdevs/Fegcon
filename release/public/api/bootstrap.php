@@ -51,6 +51,7 @@ function db(): PDO {
     $pdo->exec("CREATE TABLE IF NOT EXISTS receivables (id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY, associate_id INT UNSIGNED NOT NULL, reference VARCHAR(100) NOT NULL, due_date DATE NOT NULL, amount DECIMAL(14,2) NOT NULL, status ENUM('por_vencer','vencida','pagada','anulada') NOT NULL DEFAULT 'por_vencer', created_by INT UNSIGNED NOT NULL, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (associate_id) REFERENCES associates(id), FOREIGN KEY (created_by) REFERENCES internal_users(id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
     $pdo->exec("CREATE TABLE IF NOT EXISTS payroll_collections (id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY, period_label VARCHAR(100) NOT NULL, expected_amount DECIMAL(14,2) NOT NULL DEFAULT 0, collected_amount DECIMAL(14,2) NOT NULL DEFAULT 0, status ENUM('borrador','enviado','recibido','conciliado') NOT NULL DEFAULT 'borrador', created_by INT UNSIGNED NOT NULL, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (created_by) REFERENCES internal_users(id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
     $pdo->exec("CREATE TABLE IF NOT EXISTS promissory_notes (id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY, associate_id INT UNSIGNED NOT NULL, credit_application_id BIGINT UNSIGNED NULL, note_number VARCHAR(100) NOT NULL UNIQUE, status ENUM('borrador','pendiente_firma','firmado','custodiado','anulado') NOT NULL DEFAULT 'borrador', notes VARCHAR(255) NULL, created_by INT UNSIGNED NOT NULL, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (associate_id) REFERENCES associates(id), FOREIGN KEY (credit_application_id) REFERENCES credit_applications(id), FOREIGN KEY (created_by) REFERENCES internal_users(id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS promissory_documents (id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY, promissory_note_id BIGINT UNSIGNED NOT NULL, label VARCHAR(120) NOT NULL, original_name VARCHAR(255) NOT NULL, storage_key VARCHAR(64) NOT NULL UNIQUE, mime_type VARCHAR(80) NOT NULL, byte_size INT UNSIGNED NOT NULL, status ENUM('pendiente','custodiado','rechazado','retirado') NOT NULL DEFAULT 'pendiente', created_by INT UNSIGNED NOT NULL, reviewed_by INT UNSIGNED NULL, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, reviewed_at TIMESTAMP NULL, FOREIGN KEY (promissory_note_id) REFERENCES promissory_notes(id), FOREIGN KEY (created_by) REFERENCES internal_users(id), FOREIGN KEY (reviewed_by) REFERENCES internal_users(id), KEY promissory_documents_note_status_idx (promissory_note_id,status)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
     return $pdo;
 }
 
@@ -112,6 +113,21 @@ function active_savings_balance(PDO $db, int $associateId, bool $lockAssociate =
     return max(0, (float) $balance->fetchColumn());
 }
 
+function private_document_directory(): string {
+    $directory = dirname($_SERVER['DOCUMENT_ROOT'], 2) . '/fegcon-private-documents';
+    if (!is_dir($directory) && !mkdir($directory, 0700, true) && !is_dir($directory)) throw new RuntimeException('No fue posible crear la carpeta privada de documentos.');
+    @chmod($directory, 0700);
+    $root = realpath($directory);
+    $publicRoot = realpath((string) $_SERVER['DOCUMENT_ROOT']);
+    if (!$root || !$publicRoot || strncmp($root . DIRECTORY_SEPARATOR, $publicRoot . DIRECTORY_SEPARATOR, strlen($publicRoot . DIRECTORY_SEPARATOR)) === 0) throw new RuntimeException('La carpeta privada no puede estar dentro del sitio público.');
+    return $root;
+}
+
+function private_document_path(string $key): string {
+    if (!preg_match('/\A[a-f0-9]{48}\.(pdf|jpg|png)\z/', $key)) throw new RuntimeException('Archivo privado no válido.');
+    return private_document_directory() . DIRECTORY_SEPARATOR . $key;
+}
+
 function verify_csrf(): void {
     start_session();
     $token = $_SERVER['HTTP_X_CSRF_TOKEN'] ?? '';
@@ -147,6 +163,10 @@ function apply_approved_change(PDO $db, int $requesterId, int $reviewerId, strin
             $q=$db->prepare('INSERT INTO associate_events(associate_id,event_type,title,description,created_by) VALUES (? ,"actualizacion","Datos actualizados","La Superadmin aprobó la actualización de datos.",?)');$q->execute([$id,$reviewerId]);audit($db,$reviewerId,'asociado',$id,'actualizar_aprobado',$document);return ['entity'=>'asociado','id'=>$id];
         case 'associate_retire':
             $id=(int)($v['id']??0);if(!$id)throw new RuntimeException('El asociado no existe.');$q=$db->prepare('UPDATE associates SET status="retirado" WHERE id=? AND status="activo"');$q->execute([$id]);if(!$q->rowCount())throw new RuntimeException('El asociado ya fue retirado o no existe.');$q=$db->prepare('INSERT INTO associate_events(associate_id,event_type,title,description,created_by) VALUES (? ,"retiro","Asociado retirado","La Superadmin autorizó el retiro del asociado.",?)');$q->execute([$id,$reviewerId]);audit($db,$reviewerId,'asociado',$id,'retirar_aprobado','');return ['entity'=>'asociado','id'=>$id];
+        case 'promissory_document_create':
+            $id=(int)($v['document_id']??0);$q=$db->prepare('SELECT storage_key FROM promissory_documents WHERE id=? AND status="pendiente"');$q->execute([$id]);$key=$q->fetchColumn();if(!$key||!is_file(private_document_path((string)$key)))throw new RuntimeException('El archivo privado ya no está disponible para revisión.');$q=$db->prepare('UPDATE promissory_documents SET status="custodiado",reviewed_by=?,reviewed_at=NOW() WHERE id=? AND status="pendiente"');$q->execute([$reviewerId,$id]);if(!$q->rowCount())throw new RuntimeException('El documento ya fue atendido o no existe.');audit($db,$reviewerId,'documento_pagare',$id,'custodiar_aprobado',substr(clean($v['label']??''),0,120));return ['entity'=>'documento_pagare','id'=>$id];
+        case 'promissory_document_delete':
+            $id=(int)($v['document_id']??0);$q=$db->prepare('UPDATE promissory_documents SET status="retirado",reviewed_by=?,reviewed_at=NOW() WHERE id=? AND status="custodiado"');$q->execute([$reviewerId,$id]);if(!$q->rowCount())throw new RuntimeException('El documento ya fue retirado o no existe.');audit($db,$reviewerId,'documento_pagare',$id,'retirar_aprobado',substr(clean($v['label']??''),0,120));return ['entity'=>'documento_pagare','id'=>$id];
         case 'savings_transaction':
             $associate = (int) ($v['associate_id'] ?? 0); $product = (int) ($v['product_id'] ?? 0); $amount = (float) ($v['amount'] ?? 0); $type = clean($v['movement_type'] ?? '');
             if (!$associate || !$product || $amount <= 0 || !in_array($type, ['aporte','retiro'], true)) throw new RuntimeException('Movimiento de ahorro inválido.');
@@ -183,7 +203,7 @@ function apply_approved_change(PDO $db, int $requesterId, int $reviewerId, strin
         case 'payroll_collection_create':
             $period=substr(clean($v['period_label']??''),0,100);if(!$period)throw new RuntimeException('El período es obligatorio.');$q=$db->prepare('INSERT INTO payroll_collections(period_label,expected_amount,created_by) VALUES(?,?,?)');$q->execute([$period,max(0,(float)($v['expected_amount']??0)),$requesterId]);$id=(int)$db->lastInsertId();audit($db,$reviewerId,'cobro_nomina',$id,'crear_aprobado',$period);return ['entity'=>'cobro_nomina','id'=>$id];
         case 'promissory_note_create':
-            $associate=(int)($v['associate_id']??0);$number=substr(clean($v['note_number']??''),0,100);if(!$associate||!$number)throw new RuntimeException('Asociado y número de pagaré son obligatorios.');$q=$db->prepare('INSERT INTO promissory_notes(associate_id,credit_application_id,note_number,status,notes,created_by) VALUES(?,?,?,?,?,?)');$q->execute([$associate,(int)($v['credit_application_id']??0)?:null,$number,'borrador',substr(clean($v['notes']??''),0,255),$requesterId]);$id=(int)$db->lastInsertId();audit($db,$reviewerId,'pagare',$id,'crear_aprobado',$number);return ['entity'=>'pagare','id'=>$id];
+            $associate=(int)($v['associate_id']??0);$credit=(int)($v['credit_application_id']??0);$number=substr(clean($v['note_number']??''),0,100);if(!$associate||!$credit||!$number)throw new RuntimeException('Asociado, crédito aprobado y número de pagaré son obligatorios.');$q=$db->prepare('SELECT id FROM credit_applications WHERE id=? AND associate_id=? AND status IN ("aprobada","desembolsada")');$q->execute([$credit,$associate]);if(!$q->fetchColumn())throw new RuntimeException('El crédito no corresponde al asociado o aún no ha sido aprobado.');$q=$db->prepare('INSERT INTO promissory_notes(associate_id,credit_application_id,note_number,status,notes,created_by) VALUES(?,?,?,?,?,?)');$q->execute([$associate,$credit,$number,'borrador',substr(clean($v['notes']??''),0,255),$requesterId]);$id=(int)$db->lastInsertId();audit($db,$reviewerId,'pagare',$id,'crear_aprobado',$number);return ['entity'=>'pagare','id'=>$id];
         case 'receivable_create':
             $associate=(int)($v['associate_id']??0);$amount=(float)($v['amount']??0);$ref=substr(clean($v['reference']??''),0,100);$date=clean($v['due_date']??'');if(!$associate||$amount<=0||!$ref||!$date)throw new RuntimeException('Datos de cartera incompletos.');$q=$db->prepare('INSERT INTO receivables(associate_id,reference,due_date,amount,created_by) VALUES(?,?,?,?,?)');$q->execute([$associate,$ref,$date,$amount,$requesterId]);$id=(int)$db->lastInsertId();audit($db,$reviewerId,'cartera',$id,'crear_aprobado',$ref);return ['entity'=>'cartera','id'=>$id];
         case 'catalog_item_create':
