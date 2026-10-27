@@ -247,14 +247,14 @@ function BusinessRulesPanel({ csrf, role, embedded = false }: { csrf: string; ro
 }
 
 type AdminSection = "resumen" | "aprobaciones" | "usuarios" | "empresas" | "reglas" | "organizacion" | "auditoria";
-const adminSections: { id: AdminSection; label: string; help: string }[] = [
-  { id: "resumen", label: "Resumen", help: "Estado y próximos pasos" },
-  { id: "aprobaciones", label: "Aprobaciones", help: "Cambios que esperan revisión" },
-  { id: "usuarios", label: "Usuarios", help: "Accesos del equipo" },
-  { id: "empresas", label: "Empresas", help: "Empresas de libranza" },
-  { id: "reglas", label: "Reglas financieras", help: "Tasas y condiciones vigentes" },
-  { id: "organizacion", label: "Datos del fondo", help: "Identificación institucional" },
-  { id: "auditoria", label: "Bitácora", help: "Actividad y decisiones registradas" },
+const adminSections: { id: AdminSection; label: string; help: string; icon: LucideIcon }[] = [
+  { id: "resumen", label: "Resumen", help: "Estado y próximos pasos", icon: LayoutDashboard },
+  { id: "aprobaciones", label: "Aprobaciones", help: "Cambios por revisar", icon: ClipboardList },
+  { id: "usuarios", label: "Usuarios", help: "Accesos del equipo", icon: Users },
+  { id: "empresas", label: "Empresas", help: "Convenios de libranza", icon: Building2 },
+  { id: "reglas", label: "Reglas financieras", help: "Tasas y condiciones", icon: Settings },
+  { id: "organizacion", label: "Datos del fondo", help: "Identificación institucional", icon: ShieldCheck },
+  { id: "auditoria", label: "Bitácora", help: "Actividad registrada", icon: FileText },
 ];
 
 function SuperadminHub({ csrf, go, initialSection = "resumen" }: { csrf: string; go: (view: View) => void; initialSection?: AdminSection }) {
@@ -262,7 +262,7 @@ function SuperadminHub({ csrf, go, initialSection = "resumen" }: { csrf: string;
   return <div className="page superadmin-page">
     <Heading eyebrow="CONTROL DEL FONDO" title="Centro Superadmin" text="Administra accesos, revisa cambios y consulta las reglas de FEGCON." />
     <nav className="admin-tabs" aria-label="Secciones de administración">
-      {adminSections.map((item) => <button key={item.id} className={section === item.id ? "active" : ""} aria-current={section === item.id ? "page" : undefined} onClick={() => setSection(item.id)}><b>{item.label}</b><small>{item.help}</small></button>)}
+      {adminSections.map((item) => { const Icon = item.icon; return <button key={item.id} className={section === item.id ? "active" : ""} aria-current={section === item.id ? "page" : undefined} onClick={() => setSection(item.id)}><span className="admin-tab-icon"><Icon /></span><span className="admin-tab-copy"><b>{item.label}</b><small>{item.help}</small></span></button>; })}
     </nav>
     {section === "resumen" && <AdminOverview go={go} setSection={setSection} />}
     {section === "aprobaciones" && <ApprovalRequestsPanel csrf={csrf} role="superadmin" />}
@@ -321,10 +321,10 @@ function AdminOverview({ go, setSection }: { go: (view: View) => void; setSectio
     </section>
     {error && <div className="auth-error flex items-center justify-between gap-3" role="alert"><span>{error}</span><Button variant="outline" onClick={() => { setLoading(true); setRetry((value) => value + 1); }}>Reintentar</Button></div>}
     <section className="admin-stat-grid" aria-label="Indicadores del sistema">
-      <AdminStat label="Asociados activos" value={loading || error ? "—" : String(summary.associates)} onClick={() => go("asociados")} />
-      <AdminStat label="Afiliaciones por revisar" value={loading || error ? "—" : String(summary.affiliations)} onClick={() => go("afiliaciones")} />
-      <AdminStat label="Cambios pendientes" value={loading || error ? "—" : String(summary.approvals)} onClick={() => setSection("aprobaciones")} />
-      <AdminStat label="Cartera registrada" value={loading || error ? "—" : money(summary.receivables)} onClick={() => go("cartera")} />
+      <AdminStat label="Asociados activos" value={loading || error ? "—" : String(summary.associates)} icon={Users} onClick={() => go("asociados")} />
+      <AdminStat label="Afiliaciones por revisar" value={loading || error ? "—" : String(summary.affiliations)} icon={ClipboardList} onClick={() => go("afiliaciones")} />
+      <AdminStat label="Cambios pendientes" value={loading || error ? "—" : String(summary.approvals)} icon={ShieldCheck} onClick={() => setSection("aprobaciones")} />
+      <AdminStat label="Cartera registrada" value={loading || error ? "—" : money(summary.receivables)} icon={Banknote} onClick={() => go("cartera")} />
     </section>
     <section className="admin-next-steps">
       <div className="admin-panel-heading"><div><p>PRIMEROS PASOS</p><h2>Deja el espacio listo para el equipo</h2></div><small>{loading ? "Consultando estado…" : error ? "Estado no disponible" : `${completedSetup}/${requiredSteps.length} pasos básicos · ${summary.companies} empresas disponibles`}</small></div>
@@ -336,8 +336,8 @@ function AdminOverview({ go, setSection }: { go: (view: View) => void; setSectio
   </div>;
 }
 
-function AdminStat({ label, value, onClick }: { label: string; value: string; onClick: () => void }) {
-  return <button className="admin-stat" onClick={onClick}><small>{label}</small><b>{value}</b><span>Ver detalle <ChevronRight /></span></button>;
+function AdminStat({ label, value, icon: Icon, onClick }: { label: string; value: string; icon: LucideIcon; onClick: () => void }) {
+  return <button className="admin-stat" onClick={onClick}><span className="admin-stat-icon"><Icon /></span><small>{label}</small><b>{value}</b><span className="admin-stat-link">Ver detalle <ChevronRight /></span></button>;
 }
 
 type AuditEntry = { id: number; entity: string; entity_id: number; action: string; detail: string; created_at: string; user_name?: string };
