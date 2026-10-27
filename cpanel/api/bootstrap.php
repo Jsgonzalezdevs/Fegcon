@@ -40,6 +40,33 @@ function db(): PDO {
     $seed->execute(['ahorro','Aportes FEGCON','APORTES-FEGCON',json_encode(['ahorros_a_la_vista_pct'=>30,'aportes_pct'=>70,'disponibilidad'=>'inmediata'],JSON_UNESCAPED_UNICODE)]);
     $seed->execute(['credito','Libre inversión','LIBRE-INVERSION',json_encode(['tasa_fija_mensual_pct'=>2,'base_interes'=>'saldo_pendiente','plazo_minimo_meses'=>1,'plazo_maximo_meses'=>60,'multiplicadores_cupo'=>[3,4,5]],JSON_UNESCAPED_UNICODE)]);
     $pdo->exec("CREATE TABLE IF NOT EXISTS savings_transactions (id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY, associate_id INT UNSIGNED NOT NULL, product_id INT UNSIGNED NOT NULL, movement_type ENUM('aporte','retiro') NOT NULL, amount DECIMAL(14,2) NOT NULL, status ENUM('pendiente','aplicado','anulado') NOT NULL DEFAULT 'aplicado', reference VARCHAR(100) NULL, recorded_by INT UNSIGNED NOT NULL, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (associate_id) REFERENCES associates(id), FOREIGN KEY (product_id) REFERENCES financial_products(id), FOREIGN KEY (recorded_by) REFERENCES internal_users(id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    $savingsSplitMigration = $pdo->query("SELECT migration_key FROM admin_migrations WHERE migration_key='savings_split_30_70_v1'")->fetchColumn();
+    if (!$savingsSplitMigration) {
+        foreach (['vista_amount' => 'DECIMAL(14,2) NOT NULL DEFAULT 0', 'contributions_amount' => 'DECIMAL(14,2) NOT NULL DEFAULT 0'] as $column => $definition) {
+            $check = $pdo->prepare('SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name=? AND column_name=?');
+            $check->execute(['savings_transactions', $column]);
+            if (!(int) $check->fetchColumn()) $pdo->exec('ALTER TABLE savings_transactions ADD COLUMN ' . $column . ' ' . $definition);
+        }
+        $updateSplit = $pdo->prepare('UPDATE savings_transactions SET vista_amount=?,contributions_amount=? WHERE id=?');
+        $associateIds = $pdo->query("SELECT DISTINCT associate_id FROM savings_transactions WHERE status='aplicado' ORDER BY associate_id")->fetchAll(PDO::FETCH_COLUMN);
+        foreach ($associateIds as $associateId) {
+            $vista = 0.0; $contributions = 0.0;
+            $movements = $pdo->prepare("SELECT id,movement_type,amount FROM savings_transactions WHERE associate_id=? AND status='aplicado' ORDER BY created_at,id");
+            $movements->execute([(int)$associateId]);
+            foreach ($movements as $movement) {
+                $amount = (float)$movement['amount']; $vistaPart = 0.0; $contributionPart = 0.0;
+                if ($movement['movement_type'] === 'aporte') {
+                    $vistaPart = round($amount * 0.30, 2); $contributionPart = $amount - $vistaPart;
+                    $vista += $vistaPart; $contributions += $contributionPart;
+                } else {
+                    $fromVista = min(max(0.0, $vista), $amount); $vistaPart = -$fromVista; $vista -= $fromVista;
+                    $contributionPart = -($amount - $fromVista); $contributions += $contributionPart;
+                }
+                $updateSplit->execute([$vistaPart,$contributionPart,(int)$movement['id']]);
+            }
+        }
+        $pdo->exec("INSERT INTO admin_migrations(migration_key) VALUES('savings_split_30_70_v1')");
+    }
     $pdo->exec("CREATE TABLE IF NOT EXISTS credit_applications (id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY, associate_id INT UNSIGNED NOT NULL, product_id INT UNSIGNED NOT NULL, requested_amount DECIMAL(14,2) NOT NULL, requested_term_months INT UNSIGNED NOT NULL, purpose VARCHAR(255) NULL, status ENUM('borrador','en_revision','aprobada','rechazada','desembolsada') NOT NULL DEFAULT 'en_revision', created_by INT UNSIGNED NOT NULL, reviewed_by INT UNSIGNED NULL, reviewed_at TIMESTAMP NULL, decision_note VARCHAR(255) NULL, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (associate_id) REFERENCES associates(id), FOREIGN KEY (product_id) REFERENCES financial_products(id), FOREIGN KEY (created_by) REFERENCES internal_users(id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
     try { $pdo->exec('ALTER TABLE credit_applications ADD COLUMN reviewed_by INT UNSIGNED NULL, ADD COLUMN reviewed_at TIMESTAMP NULL, ADD COLUMN decision_note VARCHAR(255) NULL'); } catch (Throwable $ignored) {}
     try { $pdo->exec('ALTER TABLE credit_applications ADD COLUMN approved_multiplier TINYINT UNSIGNED NULL, ADD COLUMN monthly_installment DECIMAL(14,2) NULL'); } catch (Throwable $ignored) {}
@@ -120,12 +147,26 @@ function require_core_product(PDO $db, int $productId, string $type): void {
 }
 
 function active_savings_balance(PDO $db, int $associateId, bool $lockAssociate = false): float {
+    $components = active_savings_components($db, $associateId, $lockAssociate);
+    return $components['vista'] + $components['aportes'];
+}
+
+function active_savings_components(PDO $db, int $associateId, bool $lockAssociate = false): array {
     $associate = $db->prepare('SELECT id FROM associates WHERE id=? AND status="activo"' . ($lockAssociate ? ' FOR UPDATE' : ''));
     $associate->execute([$associateId]);
     if (!$associate->fetchColumn()) throw new RuntimeException('El asociado no existe o no está activo.');
-    $balance = $db->prepare("SELECT COALESCE(SUM(CASE WHEN movement_type='aporte' THEN amount ELSE -amount END),0) FROM savings_transactions WHERE associate_id=? AND status='aplicado'");
+    $balance = $db->prepare("SELECT COALESCE(SUM(vista_amount),0) AS vista,COALESCE(SUM(contributions_amount),0) AS aportes FROM savings_transactions WHERE associate_id=? AND status='aplicado'");
     $balance->execute([$associateId]);
-    return max(0, (float) $balance->fetchColumn());
+    $row = $balance->fetch() ?: [];
+    return ['vista' => (float)($row['vista'] ?? 0), 'aportes' => (float)($row['aportes'] ?? 0)];
+}
+
+function record_savings_transaction(PDO $db, int $associateId, int $productId, string $type, float $amount, string $reference, int $userId): int {
+    $vista = $type === 'aporte' ? round($amount * 0.30, 2) : -$amount;
+    $contributions = $type === 'aporte' ? $amount - $vista : 0;
+    $q = $db->prepare('INSERT INTO savings_transactions(associate_id,product_id,movement_type,amount,vista_amount,contributions_amount,reference,recorded_by) VALUES(?,?,?,?,?,?,?,?)');
+    $q->execute([$associateId,$productId,$type,$amount,$vista,$contributions,substr($reference,0,100),$userId]);
+    return (int)$db->lastInsertId();
 }
 
 function private_document_directory(): string {
@@ -186,21 +227,20 @@ function apply_approved_change(PDO $db, int $requesterId, int $reviewerId, strin
             $associate = (int) ($v['associate_id'] ?? 0); $product = (int) ($v['product_id'] ?? 0); $amount = (float) ($v['amount'] ?? 0); $type = clean($v['movement_type'] ?? '');
             if (!$associate || !$product || $amount <= 0 || !in_array($type, ['aporte','retiro'], true)) throw new RuntimeException('Movimiento de ahorro inválido.');
             require_core_product($db, $product, 'ahorro');
-            $balance = active_savings_balance($db, $associate, true);
-            if ($type === 'retiro' && $amount > $balance) throw new RuntimeException('El retiro supera el saldo de ahorro disponible.');
-            $q = $db->prepare('INSERT INTO savings_transactions(associate_id,product_id,movement_type,amount,reference,recorded_by) VALUES(?,?,?,?,?,?)'); $q->execute([$associate,$product,$type,$amount,substr(clean($v['reference'] ?? ''),0,100),$requesterId]);
-            $id = (int) $db->lastInsertId(); audit($db,$reviewerId,'ahorro',$id,'registrar_aprobado',$type); return ['entity'=>'ahorro','id'=>$id];
+            $balance = active_savings_components($db, $associate, true);
+            if ($type === 'retiro' && $amount > $balance['vista']) throw new RuntimeException('El retiro supera el saldo disponible a la vista. Los aportes del 70% no están disponibles para retiro inmediato.');
+            $id = record_savings_transaction($db,$associate,$product,$type,$amount,clean($v['reference'] ?? ''),$requesterId); audit($db,$reviewerId,'ahorro',$id,'registrar_aprobado',$type); return ['entity'=>'ahorro','id'=>$id];
         case 'credit_application':
             $associate = (int) ($v['associate_id'] ?? 0); $product = (int) ($v['product_id'] ?? 0); $amount = (float) ($v['amount'] ?? 0); $term = (int) ($v['term_months'] ?? 0);
             if (!$associate || !$product || $amount <= 0 || $term < 1 || $term > 60) throw new RuntimeException('Solicitud de crédito inválida.');
             require_core_product($db, $product, 'credito');
-            $balance = active_savings_balance($db, $associate, true);
-            if ($amount > $balance * .70 * 5) throw new RuntimeException('El monto solicitado supera el cupo máximo de cinco veces el 70% de los aportes.');
+            $balance = active_savings_components($db, $associate, true);
+            if ($amount > max(0,$balance['aportes']) * 5) throw new RuntimeException('El monto solicitado supera el cupo máximo de cinco veces los aportes.');
             $q = $db->prepare('INSERT INTO credit_applications(associate_id,product_id,requested_amount,requested_term_months,purpose,created_by) VALUES(?,?,?,?,?,?)'); $q->execute([$associate,$product,$amount,$term,substr(clean($v['purpose'] ?? ''),0,255),$requesterId]);
             $id = (int) $db->lastInsertId(); audit($db,$reviewerId,'credito',$id,'solicitar_aprobado','Solicitud'); return ['entity'=>'credito','id'=>$id];
         case 'credit_decision':
             $id=(int)($v['id']??0); $status=clean($v['status']??''); if (!$id || !in_array($status,['aprobada','rechazada'],true)) throw new RuntimeException('Decisión de crédito inválida.');
-            $q=$db->prepare('SELECT associate_id,requested_amount,requested_term_months FROM credit_applications WHERE id=? AND status="en_revision"');$q->execute([$id]);$application=$q->fetch();if(!$application)throw new RuntimeException('La solicitud ya fue procesada.');$multiplier=(int)($v['multiplier']??0);$monthly=null;if($status==='aprobada'){if(!in_array($multiplier,[3,4,5],true))throw new RuntimeException('Selecciona el cupo aprobado: 3, 4 o 5 veces los aportes.');$balance=$db->prepare("SELECT COALESCE(SUM(CASE WHEN movement_type='aporte' THEN amount ELSE -amount END),0) FROM savings_transactions WHERE associate_id=? AND status='aplicado'");$balance->execute([(int)$application['associate_id']]);$base=max(0,(float)$balance->fetchColumn())*.70;if((float)$application['requested_amount']>$base*$multiplier)throw new RuntimeException('El monto solicitado supera el cupo del multiplicador elegido.');$term=(int)$application['requested_term_months'];$principal=(float)$application['requested_amount'];$monthly=$principal*.02/(1-pow(1.02,-$term));}
+            $q=$db->prepare('SELECT associate_id,requested_amount,requested_term_months FROM credit_applications WHERE id=? AND status="en_revision"');$q->execute([$id]);$application=$q->fetch();if(!$application)throw new RuntimeException('La solicitud ya fue procesada.');$multiplier=(int)($v['multiplier']??0);$monthly=null;if($status==='aprobada'){if(!in_array($multiplier,[3,4,5],true))throw new RuntimeException('Selecciona el cupo aprobado: 3, 4 o 5 veces los aportes.');$balance=active_savings_components($db,(int)$application['associate_id'],true);$base=max(0,$balance['aportes']);if((float)$application['requested_amount']>$base*$multiplier)throw new RuntimeException('El monto solicitado supera el cupo del multiplicador elegido.');$term=(int)$application['requested_term_months'];$principal=(float)$application['requested_amount'];$monthly=$principal*.02/(1-pow(1.02,-$term));}
             $q=$db->prepare('UPDATE credit_applications SET status=?,reviewed_by=?,reviewed_at=NOW(),decision_note=?,approved_multiplier=?,monthly_installment=? WHERE id=? AND status="en_revision"');$q->execute([$status,$reviewerId,substr(clean($v['note']??''),0,255),$status==='aprobada'?$multiplier:null,$monthly,$id]);if(!$q->rowCount())throw new RuntimeException('La solicitud ya fue procesada.');
             audit($db,$reviewerId,'credito',$id,$status,'Decisión aprobada'); return ['entity'=>'credito','id'=>$id];
         case 'affiliation_create':
