@@ -64,6 +64,12 @@ body { letter-spacing:-.01em; }
 /* Keep dialogs legible above the application shell, even when theme utilities fail to load. */
 [data-slot="dialog-overlay"] { z-index:1000!important; background:rgba(13,31,34,.58)!important; }
 [data-slot="dialog-content"] { z-index:1001!important; isolation:isolate; background-color:#fff!important; color:#202b2e; }
+.empty-state { display:grid; justify-items:start; gap:8px; padding:28px 22px; color:var(--ink); }
+.table-tools>div>b,.table-tools>div>small { display:block; }
+.table-tools>div>small { margin-top:4px; color:var(--muted); font-size:11px; line-height:1.45; }
+.empty-state>b { font-size:14px; font-weight:750; }
+.empty-state>small { max-width:620px; color:var(--muted); font-size:12px; line-height:1.55; }
+.empty-state>.violet-button,.empty-state>button { margin-top:7px; }
 .associate-dialog { width:min(672px,calc(100vw - 32px))!important; max-width:672px!important; max-height:calc(100dvh - 32px); overflow-y:auto; border-radius:20px!important; background:#fff!important; color:#202b2e!important; box-shadow:0 28px 80px rgba(14,40,44,.24)!important; }
 
 /* Subtle movement makes the live collection dashboard feel active without distracting. */

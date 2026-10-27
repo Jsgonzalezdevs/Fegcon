@@ -199,6 +199,11 @@ function audit(PDO $db, int $userId, string $entity, int $entityId, string $acti
 
 function apply_approved_change(PDO $db, int $requesterId, int $reviewerId, string $operation, array $v): array {
     switch ($operation) {
+        case 'company_create':
+            $name=substr(clean($v['company_name']??''),0,190);$taxId=substr(clean($v['tax_id']??''),0,50);$contact=substr(clean($v['contact_name']??''),0,160);$email=substr(clean($v['contact_email']??''),0,190);
+            if(!$name)throw new RuntimeException('El nombre de la empresa es obligatorio.');
+            if($email!==''&&!filter_var($email,FILTER_VALIDATE_EMAIL))throw new RuntimeException('El correo de contacto no es válido.');
+            $q=$db->prepare('INSERT INTO companies(name,tax_id,contact_name,contact_email) VALUES(?,?,?,?)');$q->execute([$name,$taxId?:null,$contact?:null,$email?:null]);$id=(int)$db->lastInsertId();audit($db,$reviewerId,'empresa',$id,'crear_aprobado',$name);return ['entity'=>'empresa','id'=>$id];
         case 'associate_create':
             $first = clean($v['firstName'] ?? ''); $last = clean($v['lastName'] ?? ''); $document = clean($v['documentNumber'] ?? '');
             if (!$first || !$last || !$document) throw new RuntimeException('Datos del asociado incompletos.');
