@@ -1,3 +1,4 @@
+import { BrandLogo } from "@/components/fegcon/brand-logo";
 /** Development-only visual review. No fabricated operational data or successful API responses. */
 import { createRoot } from "react-dom/client";
 import { useState } from "react";
@@ -40,11 +41,10 @@ function Review() {
       <div className="fegcon-app">
         <aside className="app-rail">
           <div className="brand">
-            <span className="brand-mark">F</span>
-            <span>
-              <b>FEGCON</b>
+            <div className="brand-identity">
+              <BrandLogo />
               <small>Revisión de interfaz</small>
-            </span>
+            </div>
           </div>
           <nav aria-label="Módulos">
             {nav.map((group) => (

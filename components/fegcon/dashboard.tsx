@@ -1,5 +1,7 @@
 "use client";
 
+import { BrandLogo } from "@/components/fegcon/brand-logo";
+
 import { apiFetch } from "@/lib/fegcon-api";
 
 import { Button } from "@/components/ui/button";
@@ -518,8 +520,7 @@ export function Login({
     <main className="auth-page auth-login">
       <aside className="auth-introduction">
         <div className="auth-intro-brand">
-          <span>F</span>
-          <b>FEGCON</b>
+          <BrandLogo />
         </div>
         <div>
           <p>PERSONAS. AHORRO. BIENESTAR.</p>
@@ -542,11 +543,8 @@ export function Login({
       </aside>
       <section className="auth-card">
         <div className="auth-brand">
-          <span>F</span>
-          <div>
-            <b>FEGCON</b>
-            <small>Gestión interna</small>
-          </div>
+          <BrandLogo />
+          <small>Gestión interna</small>
         </div>
         <p>ACCESO DEL EQUIPO</p>
         <h1>Bienvenido de nuevo.</h1>

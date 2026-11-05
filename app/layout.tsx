@@ -7,8 +7,8 @@ export const metadata: Metadata = {
   description:
     "Portal interno de FEGCON para administrar asociados, ahorros, créditos, cartera y cobros.",
   icons: {
-    icon: "/favicon.svg",
-    shortcut: "/favicon.svg",
+    icon: "/favicon.ico",
+    shortcut: "/favicon.ico",
   },
 };
 

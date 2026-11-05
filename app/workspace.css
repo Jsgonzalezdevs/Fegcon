@@ -40,10 +40,7 @@ body {
   color: #647b7b;
   font-size: 11px;
 }
-.brand-mark {
-  box-shadow: none;
-  border-radius: 11px;
-}
+
 .app-rail nav {
   padding: 0 12px;
 }
@@ -957,21 +954,7 @@ button:disabled {
   align-items: center;
   gap: 12px;
 }
-.auth-intro-brand > span {
-  display: grid;
-  place-items: center;
-  width: 40px;
-  height: 40px;
-  border: 1px solid #ffffff3d;
-  border-radius: 12px;
-  color: #bceae0;
-  font-size: 25px;
-  font-weight: 850;
-}
-.auth-intro-brand > b {
-  font-size: 16px;
-  letter-spacing: 0.14em;
-}
+
 .auth-introduction > div > p {
   margin: 0 0 19px;
   color: #a7cec3;
@@ -1088,4 +1071,69 @@ button:disabled {
   top: 4px;
   right: 4px;
   margin: 0;
+}
+
+/* Original FEGCON identity: no replacement monograms, filters or recoloring. */
+.brand-logo {
+  display: block;
+  width: 180px;
+  max-width: 100%;
+  height: auto;
+  object-fit: contain;
+  flex: none;
+}
+.brand {
+  height: auto;
+  min-height: 124px;
+  flex: none;
+  padding: 16px 22px 18px;
+  align-items: center;
+}
+.brand-identity {
+  display: grid;
+  justify-items: start;
+  gap: 3px;
+  min-width: 0;
+}
+.brand-identity .brand-logo {
+  width: 172px;
+}
+.brand-identity small {
+  margin: 0 0 0 5px;
+  font-size: 10px;
+  letter-spacing: 0.025em;
+}
+.auth-brand {
+  display: grid;
+  justify-items: start;
+  gap: 5px;
+  margin-bottom: 28px;
+}
+.auth-brand .brand-logo {
+  width: 210px;
+}
+.auth-brand > small {
+  margin-left: 6px;
+  color: #647b7b;
+  font-size: 11px;
+}
+.auth-intro-brand {
+  width: fit-content;
+  padding: 10px 14px;
+  border: 1px solid #ffffff26;
+  border-radius: 12px;
+  background: #fff;
+}
+.auth-intro-brand .brand-logo {
+  width: 210px;
+}
+@media (min-width: 641px) {
+  .auth-login .auth-card .auth-brand {
+    display: none;
+  }
+}
+@media (max-width: 640px) {
+  .auth-brand .brand-logo {
+    width: 200px;
+  }
 }

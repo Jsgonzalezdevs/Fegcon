@@ -1,5 +1,7 @@
 "use client";
 
+import { BrandLogo } from "@/components/fegcon/brand-logo";
+
 import { searchText } from "@/lib/search-text";
 
 import { apiFetch } from "@/lib/fegcon-api";
@@ -544,11 +546,8 @@ export default function Home() {
       <main className="auth-page">
         <section className="auth-card">
           <div className="auth-brand">
-            <span>F</span>
-            <div>
-              <b>FEGCON</b>
-              <small>Gestión interna</small>
-            </div>
+            <BrandLogo />
+            <small>Gestión interna</small>
           </div>
           <p>SERVICIO NO DISPONIBLE</p>
           <h1>No pudimos conectar.</h1>
@@ -579,11 +578,10 @@ export default function Home() {
         </a>
         <aside className={`app-rail ${menuOpen ? "rail-open" : ""}`}>
           <div className="brand">
-            <span className="brand-mark">F</span>
-            <span>
-              <b>FEGCON</b>
+            <div className="brand-identity">
+              <BrandLogo />
               <small>Gestión interna</small>
-            </span>
+            </div>
             <button
               aria-label="Cerrar menú de módulos"
               onClick={() => setMenuOpen(false)}

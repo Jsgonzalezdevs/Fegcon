@@ -6,6 +6,10 @@ import path from "node:path";
 export default defineConfig({
   root: path.resolve(__dirname, "static"),
   plugins: [react()],
+  publicDir: path.resolve(__dirname, "public"),
   resolve: { alias: { "@": path.resolve(__dirname, ".") } },
-  build: { outDir: path.resolve(__dirname, "release/public"), emptyOutDir: true },
+  build: {
+    outDir: path.resolve(__dirname, "release/public"),
+    emptyOutDir: true,
+  },
 });

@@ -23,6 +23,17 @@ for (const file of [
     `El paquete contiene una copia desactualizada de ${file}`,
   );
 }
+for (const asset of ["brand/fegcon-original.jpg", "favicon.ico"]) {
+  assert.deepEqual(
+    await readFile(resolve(publicDir, asset)),
+    await readFile(resolve(root, "public", asset)),
+    `La identidad original no está sincronizada: ${asset}`,
+  );
+}
+assert.ok(
+  html.includes('href="/favicon.ico"'),
+  "El navegador debe usar el ícono oficial de FEGCON.",
+);
 const files = await readdir(publicDir, { recursive: true });
 assert.ok(
   !files.some((file) =>
