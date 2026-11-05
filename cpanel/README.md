@@ -38,3 +38,9 @@ Al cargar el primer escaneo, la API crea `fegcon-private-documents` en la carpet
 Prepara el mismo paquete y reemplaza los archivos de la raíz del subdominio con el contenido de `release/public/`. Conserva la configuración privada y la base de datos actuales: actualizar el código no borra registros. Si necesitas empezar en cero, crea una base MySQL nueva, importa el SQL y ejecuta el instalador con esa base después de respaldar la configuración anterior. No reutilices la base operativa ni borres tablas sin identificar antes cada registro y su historial.
 
 No subas copias de pagarés, documentos de asociados, contraseñas ni archivos de configuración con secretos al repositorio o al paquete público.
+
+## Actualizaciones con sesiones abiertas
+
+La compilación frontend prepara la versión nueva en una carpeta temporal y publica `index.html` al final. Conserva los archivos con hash de versiones anteriores en `assets/`, necesarios para las pestañas que siguen abiertas durante una actualización. No vacíes esa carpeta al subir una versión nueva: copia y combina sus archivos.
+
+Si una pestaña solicita un módulo que ya no está disponible, la interfaz nueva intenta actualizarse una vez y retoma el módulo solicitado. Esto conserva la sesión y los datos guardados; no reenvía operaciones financieras. El HTML debe revalidarse, mientras los archivos con hash se mantienen sin modificar.

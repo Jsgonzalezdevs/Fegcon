@@ -10,6 +10,6 @@ export default defineConfig({
   resolve: { alias: { "@": path.resolve(__dirname, ".") } },
   build: {
     outDir: path.resolve(__dirname, "release/public"),
-    emptyOutDir: true,
+    emptyOutDir: false,
   },
 });

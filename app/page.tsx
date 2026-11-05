@@ -1,5 +1,7 @@
 "use client";
 
+import { takeRecoveredModule } from "@/lib/module-recovery";
+
 import { BrandLogo } from "@/components/fegcon/brand-logo";
 import { DemoBanner } from "@/components/fegcon/demo-banner";
 
@@ -110,6 +112,17 @@ const FinanceScreen = lazy(() =>
     default: module.FinanceScreen,
   })),
 );
+
+function initialModule(user: SessionUser): View {
+  const recovered = takeRecoveredModule();
+  if (
+    recovered &&
+    Object.prototype.hasOwnProperty.call(titles, recovered) &&
+    hasAccess(user, viewModules[recovered as View] || "inicio")
+  )
+    return recovered as View;
+  return "inicio";
+}
 
 export default function Home() {
   const [view, setView] = useState<View>("inicio");
@@ -244,7 +257,7 @@ export default function Home() {
         if (data.user) {
           setSession(data.user);
           setCsrf(data.csrf || "");
-          setView("inicio");
+          setView(initialModule(data.user));
         } else {
           setSession(null);
           setCsrf("");
@@ -536,7 +549,7 @@ export default function Home() {
       setAuthInitError(false);
       setSession(data.user);
       setCsrf(data.csrf);
-      setView("inicio");
+      setView(initialModule(data.user));
     } catch {
       setAuthError("No se pudo conectar con el servidor.");
     }
@@ -734,7 +747,7 @@ export default function Home() {
                 </button>
               </div>
             )}
-            <ModuleBoundary key={view} onHome={() => go("inicio")}>
+            <ModuleBoundary key={view} view={view} onHome={() => go("inicio")}>
               <Suspense
                 fallback={
                   <div className="empty-state" role="status">

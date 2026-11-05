@@ -54,3 +54,9 @@ El entorno de trabajo no tiene PHP ni MySQL y no dispone de una sesión operativ
 7. Revisar el menú móvil, filtros y descargas CSV.
 
 La petición de una mejora del «100%» se interpreta como una transformación completa de la experiencia, no como una métrica demostrada. No se afirma una reducción porcentual de errores o tiempo de aprendizaje sin una comparación con usuarios y tareas medidas.
+
+## Corrección de cargas después de actualizar
+
+Se corrigió una falla por eliminación de archivos de compilaciones previas: una pestaña abierta podía conservar el programa principal anterior y fallar al solicitar una pantalla cargada por demanda. `scripts/build-static.mjs` ahora compila en una carpeta temporal y `publish-static.mjs` combina los assets sin eliminar los antiguos, publica el HTML al final y conserva la API PHP. Se recuperaron los assets de las versiones recientes para las pestañas ya abiertas.
+
+`ModuleBoundary` distingue los errores de carga de módulos de los errores de renderizado. En caso de archivos desactualizados intenta una recarga controlada y retoma el módulo solicitado, sujeto a los permisos de la sesión. La protección contra bucles evita recargas repetidas. No modifica los datos de la demo ni reintenta escrituras financieras. El verificador recorre también las referencias de los módulos separados para detectar archivos ausentes antes de entregar el paquete.

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readFile, readdir, access } from "node:fs/promises";
-import { resolve } from "node:path";
+import { resolve, dirname } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
 const publicDir = resolve(root, "release/public");
@@ -10,6 +10,22 @@ const assets = [...html.matchAll(/(?:src|href)="(\/assets\/[^"?]+)"/g)].map(
 );
 assert.ok(assets.length >= 2, "El HTML debe enlazar los assets compilados.");
 for (const asset of assets) await access(resolve(publicDir, `.${asset}`));
+// Check split-module references as well as the entry, including retained versions.
+let checkedImports = 0;
+for (const filename of await readdir(resolve(publicDir, "assets"))) {
+  if (!filename.endsWith(".js")) continue;
+  const sourcePath = resolve(publicDir, "assets", filename);
+  const source = await readFile(sourcePath, "utf8");
+  for (const match of source.matchAll(
+    /["']((?:\.\/|\/?assets\/)[^"'\s]+?\.(?:js|css))["']/g,
+  )) {
+    const dependency = match[1].startsWith("./")
+      ? resolve(dirname(sourcePath), match[1])
+      : resolve(publicDir, match[1].replace(/^\//, ""));
+    await access(dependency);
+    checkedImports++;
+  }
+}
 for (const file of [
   "api/index.php",
   "api/bootstrap.php",
@@ -46,5 +62,5 @@ assert.ok(
   "La entrada de producción no puede incluir la galería.",
 );
 console.log(
-  `Paquete cPanel verificado: ${assets.length} assets iniciales, API sincronizada, sin galería de desarrollo.`,
+  `Paquete cPanel verificado: ${assets.length} assets iniciales y ${checkedImports} referencias de módulos, API sincronizada, sin galería de desarrollo.`,
 );

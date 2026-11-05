@@ -1,0 +1,1 @@
+import{_ as e,b as t}from"./index-ewwEHsNo.js";function n(n,r=e()){return t(r)?`#demo-document`:n}export{n as t};

@@ -1,6 +1,9 @@
 Options -Indexes
 DirectoryIndex index.html
 <IfModule mod_headers.c>
+  <Files "index.html">
+    Header always set Cache-Control "no-cache, must-revalidate"
+  </Files>
   Header always set X-Content-Type-Options "nosniff"
   Header always set X-Frame-Options "DENY"
   Header always set Referrer-Policy "same-origin"
