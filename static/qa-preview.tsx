@@ -80,7 +80,6 @@ function Review() {
             <small>Revisión local · API no conectada</small>
           </header>
           <main className="app-content">
-            <ModuleGuide view={view} role="superadmin" />
             {view === "inicio" ? (
               <Dashboard go={go} csrf="" session={reviewSession} />
             ) : view === "asociados" ? (
@@ -120,6 +119,7 @@ function Review() {
                 go={go}
               />
             )}
+            <ModuleGuide view={view} role="superadmin" />
           </main>
         </div>
       </div>

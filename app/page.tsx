@@ -722,7 +722,6 @@ export default function Home() {
             )}
           </header>
           <main className="app-content" id="contenido-principal">
-            <ModuleGuide view={view} role={session.role} />
             {notice && (
               <div className={`flash-message ${noticeTone}`} role="status">
                 {noticeTone === "success" ? <Check /> : null}
@@ -843,6 +842,7 @@ export default function Home() {
                 )}
               </Suspense>
             </ModuleBoundary>
+            <ModuleGuide view={view} role={session.role} />
           </main>
         </div>
         <Dialog open={newOpen} onOpenChange={setNewOpen}>

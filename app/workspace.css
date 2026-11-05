@@ -398,7 +398,7 @@ button:disabled {
   top: 12px;
 }
 .module-guide {
-  margin-bottom: 24px;
+  margin: 28px 0 0;
   border: 1px solid #dce8e1;
   border-radius: 12px;
   color: #33574d;

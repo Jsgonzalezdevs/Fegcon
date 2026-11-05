@@ -1,2 +1,2 @@
-import{b as e}from"./index-NqqN8Rzm.js";function t(e,t){let n=e=>{let t=String(e);return`"${(/^[\s\u0000-\u001f]*[=+@-]/.test(t)?`'${t}`:t).replaceAll(`"`,`""`)}"`};return`﻿`+[e,...t].map(e=>e.map(n).join(`;`)).join(`\r
+import{b as e}from"./index-KCheXiiH.js";function t(e,t){let n=e=>{let t=String(e);return`"${(/^[\s\u0000-\u001f]*[=+@-]/.test(t)?`'${t}`:t).replaceAll(`"`,`""`)}"`};return`﻿`+[e,...t].map(e=>e.map(n).join(`;`)).join(`\r
 `)}function n(n,r,i){let a=URL.createObjectURL(new Blob([t(r,i)],{type:`text/csv;charset=utf-8;`})),o=document.createElement(`a`);o.href=a,o.download=`FEGCON-${e()?`DEMO-`:``}${n}-${new Date().toISOString().slice(0,10)}.csv`,document.body.appendChild(o),o.click(),o.remove(),setTimeout(()=>URL.revokeObjectURL(a),1e3)}export{n as t};
