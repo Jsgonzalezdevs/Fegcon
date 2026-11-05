@@ -1,3 +1,5 @@
+import { isDemoActive } from "./demo/session.ts";
+
 /** Export only the records visible to the current user. Neutralize spreadsheet formulas. */
 export function csvContent(
   headers: string[],
@@ -24,7 +26,7 @@ export function downloadCsv(
   );
   const link = document.createElement("a");
   link.href = url;
-  link.download = `FEGCON-${name}-${new Date().toISOString().slice(0, 10)}.csv`;
+  link.download = `FEGCON-${isDemoActive() ? "DEMO-" : ""}${name}-${new Date().toISOString().slice(0, 10)}.csv`;
   document.body.appendChild(link);
   link.click();
   link.remove();

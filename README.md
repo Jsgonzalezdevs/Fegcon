@@ -40,3 +40,11 @@ npm run build:cpanel
 ```
 
 Para revisar únicamente la interfaz sin una base conectada, inicia `npx vite --config vite.static.config.ts` y abre `/qa.html`. Esa galería está restringida al modo de desarrollo y no se incluye en el paquete público.
+
+## Cuenta de demostración
+
+En la pantalla de acceso puedes usar **usuario `demo` y contraseña `demo`**, o pulsar **Explora la demo**.
+
+La demo contiene asociados, ahorros, créditos, pagarés, cartera, pagos, empresas y nómina ficticios. Sus operaciones se simulan en la pestaña del navegador; no crea una cuenta en PHP/MySQL y no modifica la base operativa. El aviso de demostración permanece visible y permite restablecer los ejemplos. Al cerrar sesión se eliminan los cambios de la demo.
+
+Los soportes se simulan guardando solo su nombre y metadatos; no se envía ni se conserva su contenido. Los CSV descargados desde la demo llevan `DEMO` en el nombre. Consulta [Modo de demostración](docs/MODO-DEMO.md) para conocer su alcance y verificación.

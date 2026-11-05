@@ -1,5 +1,7 @@
 "use client";
 
+import { privateDocumentHref } from "@/lib/private-document";
+
 import { AssociateSelect } from "./associate-select";
 
 import { apiFetch } from "@/lib/fegcon-api";
@@ -207,7 +209,9 @@ export function CreditDocumentsPanel({
                   role === "superadmin") && (
                   <Button variant="outline" asChild>
                     <a
-                      href={`/api/?action=credit-document-file&id=${document.id}`}
+                      href={privateDocumentHref(
+                        `/api/?action=credit-document-file&id=${document.id}`,
+                      )}
                     >
                       Abrir
                     </a>

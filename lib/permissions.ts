@@ -1,5 +1,6 @@
 export type PermissionSet = Record<string, { view: boolean; manage: boolean }>;
 export type SessionUser = {
+  demo?: boolean;
   id: number;
   name: string;
   email: string;

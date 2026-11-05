@@ -1,3 +1,5 @@
+@import "./access.css";
+
 /* FEGCON workspace. Shared visual system for every operational module. */
 :root {
   --workspace-accent: #237f86;
@@ -610,21 +612,7 @@ button:disabled {
   font-size: 13px;
   line-height: 1.7;
 }
-.auth-card {
-  border-radius: 18px;
-  box-shadow: 0 20px 70px #234b4710;
-}
-.auth-card h1 {
-  font-size: 31px;
-  letter-spacing: -0.04em;
-}
-.auth-card label {
-  font-size: 13px;
-}
-.auth-card em {
-  color: #667c72;
-  font-size: 11px;
-}
+
 @media (min-width: 1600px) {
   .app-content {
     padding-top: 36px;
@@ -930,148 +918,6 @@ button:disabled {
     animation: rise 0.18s ease-out;
   }
 }
-.auth-login {
-  grid-template-columns: minmax(0, 1fr) minmax(320px, 430px);
-  gap: clamp(36px, 7vw, 120px);
-  padding: 48px clamp(24px, 7vw, 100px);
-  background: #f6f9f7;
-}
-.auth-introduction {
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  gap: 40px;
-  max-width: 660px;
-  min-height: 640px;
-  padding: 42px;
-  border-radius: 24px;
-  color: #f1fcf7;
-  background:
-    radial-gradient(ellipse at 90% 90%, #36777e55, transparent 60%), #153d40;
-}
-.auth-intro-brand {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.auth-introduction > div > p {
-  margin: 0 0 19px;
-  color: #a7cec3;
-  font-size: 10px;
-  font-weight: 650;
-  letter-spacing: 0.15em;
-}
-.auth-introduction h2 {
-  margin: 0 0 24px;
-  font-size: clamp(32px, 3.4vw, 49px);
-  line-height: 1.15;
-  letter-spacing: -0.045em;
-}
-.auth-introduction h2 span {
-  color: #afe1ce;
-}
-.auth-introduction small {
-  display: block;
-  max-width: 365px;
-  color: #b9d5ce;
-  font-size: 14px;
-  line-height: 1.75;
-}
-.auth-introduction footer {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  color: #a2c9bd;
-  font-size: 11px;
-}
-.auth-login .auth-card {
-  width: 100%;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  box-shadow: none;
-}
-.auth-login .auth-card > em {
-  line-height: 1.7;
-  text-align: left;
-}
-.auth-login .auth-card form > button {
-  min-height: 46px;
-  justify-content: space-between;
-  padding: 0 15px;
-}
-.password-control {
-  position: relative;
-  display: block;
-}
-.password-control > input {
-  width: 100%;
-  padding-right: 45px;
-}
-.password-control > button {
-  position: absolute;
-  right: 4px;
-  top: 4px;
-  display: grid;
-  place-items: center;
-  width: 36px;
-  height: 35px;
-  border: 0;
-  border-radius: 7px;
-  color: #5c7d6c;
-  background: transparent;
-  cursor: pointer;
-}
-.password-control > button:hover {
-  background: #eaf3eb;
-}
-.caps-lock-warning {
-  color: #916828;
-  font-size: 12px;
-}
-@media (max-width: 900px) {
-  .auth-login {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    gap: 35px;
-    padding: 32px;
-  }
-  .auth-introduction {
-    min-height: 580px;
-    padding: 28px;
-  }
-  .auth-introduction h2 {
-    font-size: 33px;
-  }
-}
-@media (max-width: 640px) {
-  .auth-login {
-    grid-template-columns: 1fr;
-    justify-items: center;
-    align-content: center;
-    gap: 30px;
-    padding: 32px 24px;
-  }
-  .auth-introduction {
-    display: none;
-  }
-  .auth-login .auth-card {
-    max-width: 430px;
-  }
-  .auth-card h1 {
-    font-size: 29px;
-  }
-}
-.auth-card .password-control > button {
-  position: absolute;
-  width: 36px;
-  min-width: 36px;
-  height: 35px;
-  min-height: 35px;
-  top: 4px;
-  right: 4px;
-  margin: 0;
-}
 
 /* Original FEGCON identity: no replacement monograms, filters or recoloring. */
 .brand-logo {
@@ -1103,37 +949,32 @@ button:disabled {
   font-size: 10px;
   letter-spacing: 0.025em;
 }
-.auth-brand {
-  display: grid;
-  justify-items: start;
-  gap: 5px;
-  margin-bottom: 28px;
+
+/* Keep the task launcher and account identity readable against the light rail. */
+.rail-bottom > .task-finder-trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+  padding: 12px;
+  border: 1px solid #d7e6df;
+  border-radius: 10px;
+  color: #24766e;
+  background: #f4f9f5;
+  box-shadow: none;
+  font-size: 12px;
 }
-.auth-brand .brand-logo {
-  width: 210px;
+.rail-bottom > .task-finder-trigger:hover {
+  color: #185e58;
+  border-color: #a9cec1;
+  background: #eaf4ec;
+  box-shadow: none;
 }
-.auth-brand > small {
-  margin-left: 6px;
-  color: #647b7b;
-  font-size: 11px;
+.profile-chip > .avatar {
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
 }
-.auth-intro-brand {
-  width: fit-content;
-  padding: 10px 14px;
-  border: 1px solid #ffffff26;
-  border-radius: 12px;
-  background: #fff;
-}
-.auth-intro-brand .brand-logo {
-  width: 210px;
-}
-@media (min-width: 641px) {
-  .auth-login .auth-card .auth-brand {
-    display: none;
-  }
-}
-@media (max-width: 640px) {
-  .auth-brand .brand-logo {
-    width: 200px;
-  }
+.profile-chip > span:not(.avatar) {
+  flex: 1;
 }

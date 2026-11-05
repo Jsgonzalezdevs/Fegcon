@@ -1,2 +1,0 @@
-function e(e,t){let n=e=>{let t=String(e);return`"${(/^[\s\u0000-\u001f]*[=+@-]/.test(t)?`'${t}`:t).replaceAll(`"`,`""`)}"`};return`﻿`+[e,...t].map(e=>e.map(n).join(`;`)).join(`\r
-`)}function t(t,n,r){let i=URL.createObjectURL(new Blob([e(n,r)],{type:`text/csv;charset=utf-8;`})),a=document.createElement(`a`);a.href=i,a.download=`FEGCON-${t}-${new Date().toISOString().slice(0,10)}.csv`,document.body.appendChild(a),a.click(),a.remove(),setTimeout(()=>URL.revokeObjectURL(i),1e3)}export{t};

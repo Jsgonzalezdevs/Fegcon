@@ -1,6 +1,7 @@
 "use client";
 
 import { BrandLogo } from "@/components/fegcon/brand-logo";
+import { DemoBanner } from "@/components/fegcon/demo-banner";
 
 import { searchText } from "@/lib/search-text";
 
@@ -532,6 +533,7 @@ export default function Home() {
         setAuthError(data.error || "No fue posible iniciar sesión.");
         return;
       }
+      setAuthInitError(false);
       setSession(data.user);
       setCsrf(data.csrf);
       setView("inicio");
@@ -540,36 +542,21 @@ export default function Home() {
     }
   };
   if (!authReady)
-    return <div className="auth-loading">Comprobando acceso a FEGCON…</div>;
-  if (authInitError)
     return (
-      <main className="auth-page">
-        <section className="auth-card">
-          <div className="auth-brand">
-            <BrandLogo />
-            <small>Gestión interna</small>
-          </div>
-          <p>SERVICIO NO DISPONIBLE</p>
-          <h1>No pudimos conectar.</h1>
-          <small>
-            El sistema no pudo consultar el servicio de acceso. Tus datos no se
-            han modificado. Comprueba que la instalación de cPanel esté completa
-            y vuelve a intentarlo.
-          </small>
-          <Button
-            className="violet-button mt-6 w-full"
-            onClick={() => {
-              setAuthReady(false);
-              setAuthInitError(false);
-              setAuthRetry((value) => value + 1);
-            }}
-          >
-            Reintentar conexión
-          </Button>
-        </section>
+      <main className="access-loading" role="status">
+        <BrandLogo />
+        <span className="access-loader" aria-hidden="true" />
+        <span>Preparando tu espacio de trabajo…</span>
       </main>
     );
-  if (!session) return <Login error={authError} onLogin={login} />;
+  if (!session)
+    return (
+      <Login
+        error={authError}
+        onLogin={login}
+        serviceUnavailable={authInitError}
+      />
+    );
   return (
     <PermissionContext.Provider value={session.permissions}>
       <div className="fegcon-app">
@@ -696,7 +683,8 @@ export default function Home() {
             onClick={() => setMenuOpen(false)}
           />
         )}
-        <div className="app-area">
+        <div className={`app-area ${session.demo ? "demo-workspace" : ""}`}>
+          {session.demo && <DemoBanner />}
           <header className="app-topbar">
             <div className="location">
               <IconButton

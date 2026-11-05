@@ -1,8 +1,30 @@
+import { isDemoActive } from "./demo/session.ts";
+
 /** Same-origin transport for the existing cPanel PHP/MySQL API. */
 export async function apiFetch(
   input: RequestInfo | URL,
   init?: RequestInit,
 ): Promise<Response> {
+  let demoLogin = false;
+  if (typeof init?.body === "string") {
+    try {
+      demoLogin =
+        String(JSON.parse(init.body).email ?? "")
+          .trim()
+          .toLowerCase() === "demo" && String(input).includes("action=login");
+    } catch {
+      /* Let the real API validate other requests. */
+    }
+  }
+  if (isDemoActive() || demoLogin) {
+    const { handleDemoRequest } = await import("./demo/api.ts");
+    const response = await handleDemoRequest(input, init);
+    if (!response)
+      throw new Error(
+        "La sesión demo no está disponible. Vuelve a entrar con demo / demo.",
+      );
+    return response;
+  }
   try {
     return await fetch(input, {
       credentials: "same-origin",

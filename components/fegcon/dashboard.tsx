@@ -1,12 +1,8 @@
 "use client";
 
-import { BrandLogo } from "@/components/fegcon/brand-logo";
-
 import { apiFetch } from "@/lib/fegcon-api";
 
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Eye, EyeOff, ShieldCheck } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import {
   AlertTriangle,
@@ -21,7 +17,7 @@ import {
   Users,
   WalletCards,
 } from "lucide-react";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState } from "react";
 
 import {
   ApiJson,
@@ -492,122 +488,4 @@ export function Metric({
   );
 }
 
-export function Login({
-  error,
-  onLogin,
-}: {
-  error: string;
-  onLogin: (email: string, password: string) => Promise<void>;
-}) {
-  const [sending, setSending] = useState(false);
-  const [visible, setVisible] = useState(false);
-  const [capsLock, setCapsLock] = useState(false);
-  const submit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (sending) return;
-    const data = new FormData(event.currentTarget);
-    setSending(true);
-    try {
-      await onLogin(
-        String(data.get("email") || "").trim(),
-        String(data.get("password") || ""),
-      );
-    } finally {
-      setSending(false);
-    }
-  };
-  return (
-    <main className="auth-page auth-login">
-      <aside className="auth-introduction">
-        <div className="auth-intro-brand">
-          <BrandLogo />
-        </div>
-        <div>
-          <p>PERSONAS. AHORRO. BIENESTAR.</p>
-          <h2>
-            Más claridad
-            <br />
-            para cuidar
-            <br />
-            <span>lo que construimos.</span>
-          </h2>
-          <small>
-            El espacio de trabajo del Fondo de Empleados del Grupo Constructor
-            del Tolima.
-          </small>
-        </div>
-        <footer>
-          <ShieldCheck size={18} />
-          <span>Gestión cercana. Operaciones con trazabilidad.</span>
-        </footer>
-      </aside>
-      <section className="auth-card">
-        <div className="auth-brand">
-          <BrandLogo />
-          <small>Gestión interna</small>
-        </div>
-        <p>ACCESO DEL EQUIPO</p>
-        <h1>Bienvenido de nuevo.</h1>
-        <small>
-          Ingresa con tu cuenta para continuar con la operación del fondo.
-        </small>
-        <form onSubmit={submit}>
-          <label>
-            Correo electrónico
-            <Input
-              name="email"
-              type="email"
-              autoComplete="username"
-              placeholder="Tu correo de acceso"
-              required
-              disabled={sending}
-            />
-          </label>
-          <label>
-            Contraseña
-            <span className="password-control">
-              <Input
-                name="password"
-                type={visible ? "text" : "password"}
-                autoComplete="current-password"
-                required
-                disabled={sending}
-                onKeyUp={(event) =>
-                  setCapsLock(event.getModifierState("CapsLock"))
-                }
-              />
-              <button
-                type="button"
-                aria-label={
-                  visible ? "Ocultar contraseña" : "Mostrar contraseña"
-                }
-                aria-pressed={visible}
-                onClick={() => setVisible((show) => !show)}
-              >
-                {visible ? <EyeOff size={18} /> : <Eye size={18} />}
-              </button>
-            </span>
-          </label>
-          {capsLock && (
-            <small className="caps-lock-warning" role="status">
-              Bloqueo de mayúsculas está activado.
-            </small>
-          )}
-          {error && (
-            <div className="auth-error" role="alert">
-              {error}
-            </div>
-          )}
-          <Button className="violet-button" type="submit" disabled={sending}>
-            {sending ? "Verificando acceso…" : "Entrar a mi espacio"}
-            <ArrowUpRight size={16} />
-          </Button>
-        </form>
-        <em>
-          Si necesitas acceso o recuperar tu cuenta, contacta al administrador
-          del fondo.
-        </em>
-      </section>
-    </main>
-  );
-}
+export { Login } from "./login";

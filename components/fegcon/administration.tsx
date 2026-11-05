@@ -1,5 +1,7 @@
 "use client";
 
+import { privateDocumentHref } from "@/lib/private-document";
+
 import { apiFetch } from "@/lib/fegcon-api";
 
 import { Button } from "@/components/ui/button";
@@ -1385,10 +1387,10 @@ export function ApprovalRequestsPanel({
                     Number(row.payload?.document_id) > 0 && (
                       <a
                         className="text-button mt-3 inline-flex"
-                        href={
+                        href={privateDocumentHref(
                           "/api/?action=promissory-document-file&id=" +
-                          row.payload?.document_id
-                        }
+                            row.payload?.document_id,
+                        )}
                       >
                         Descargar archivo privado para revisar
                       </a>
@@ -1399,10 +1401,10 @@ export function ApprovalRequestsPanel({
                     Number(row.payload?.document_id) > 0 && (
                       <a
                         className="text-button mt-3 inline-flex"
-                        href={
+                        href={privateDocumentHref(
                           "/api/?action=credit-document-file&id=" +
-                          row.payload?.document_id
-                        }
+                            row.payload?.document_id,
+                        )}
                       >
                         Descargar soporte privado para revisar
                       </a>

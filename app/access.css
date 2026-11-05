@@ -1,0 +1,848 @@
+/* Access experience: the official identity, tactile controls and progressive feedback. */
+.access-page {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  overflow: hidden;
+  padding: 32px clamp(24px, 6vw, 96px) 22px;
+  color: #24343a;
+  background: #f5f7f6;
+  font-family:
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+}
+.access-page *,
+.access-page *::before,
+.access-page *::after {
+  box-sizing: border-box;
+}
+.access-ambient {
+  position: absolute;
+  z-index: -1;
+  pointer-events: none;
+  border-radius: 50%;
+  filter: blur(70px);
+}
+.access-ambient-one {
+  width: 500px;
+  height: 500px;
+  top: 5%;
+  right: -220px;
+  background: #d9e9e67a;
+}
+.access-ambient-two {
+  width: 450px;
+  height: 450px;
+  left: -260px;
+  bottom: -240px;
+  background: #e5d9ec70;
+}
+.access-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  width: 100%;
+  max-width: 1280px;
+  margin: 0 auto;
+}
+.access-header .brand-logo {
+  width: 176px;
+}
+.access-header > span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #687e7b;
+  font-size: 11px;
+  letter-spacing: 0.01em;
+}
+.access-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #3c9a8d;
+  box-shadow: 0 0 0 4px #dceee7;
+}
+.access-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(380px, 464px);
+  align-items: center;
+  gap: clamp(40px, 6.5vw, 112px);
+  flex: 1;
+  width: 100%;
+  max-width: 1160px;
+  margin: 26px auto 38px;
+}
+.access-story {
+  padding: 32px 0;
+}
+.access-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0 0 25px;
+  color: #65837c;
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: 0.15em;
+}
+.access-eyebrow > span {
+  display: block;
+  width: 21px;
+  height: 2px;
+  background: #719a8f;
+}
+.access-story h1 {
+  margin: 0;
+  color: #223b3d;
+  font-size: clamp(40px, 4.8vw, 64px);
+  font-weight: 600;
+  line-height: 1.08;
+  letter-spacing: -0.065em;
+}
+.access-story h1 > span {
+  display: inline-block;
+  margin-top: 7px;
+  color: #6b817e;
+}
+.access-description {
+  margin: 26px 0 37px;
+  color: #778782;
+  font-size: 15px;
+  line-height: 1.8;
+}
+.access-workflow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 400px;
+}
+.access-workflow > div {
+  flex: 1;
+  min-width: 0;
+  padding: 16px 9px 15px;
+  border: 1px solid #e0e7e3;
+  border-radius: 14px;
+  background: #ffffff8c;
+  transition:
+    transform 0.25s ease,
+    border-color 0.25s ease,
+    box-shadow 0.25s ease;
+}
+.access-workflow > div:hover {
+  transform: translateY(-4px);
+  border-color: #a9c7be;
+  box-shadow: 0 8px 22px #416e6410;
+}
+.access-workflow > div > span {
+  display: grid;
+  place-items: center;
+  width: 35px;
+  height: 35px;
+  margin: 0 0 14px 2px;
+  border-radius: 10px;
+  color: #3c8c88;
+  background: #ecf4f1;
+}
+.access-workflow > div:last-child > span {
+  color: #8d5c9b;
+  background: #f3edf5;
+}
+.access-workflow b,
+.access-workflow small {
+  display: block;
+}
+.access-workflow b {
+  color: #36514a;
+  font-size: 12px;
+  font-weight: 650;
+}
+.access-workflow small {
+  margin-top: 5px;
+  color: #84918b;
+  font-size: 9px;
+  white-space: nowrap;
+}
+.access-workflow > i {
+  flex: none;
+  width: 10px;
+  height: 1px;
+  background: #b8cdc2;
+}
+.access-story-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 44px;
+  color: #87a094;
+}
+.access-story-foot p {
+  margin: 0;
+  color: #84918c;
+  font-size: 10px;
+  line-height: 1.7;
+}
+.access-story-foot b {
+  color: #657b70;
+  font-size: 11px;
+  font-weight: 500;
+}
+.access-panel {
+  position: relative;
+  padding: 32px;
+  border: 1px solid #e4eae6;
+  border-radius: 24px;
+  background: #fff;
+  box-shadow:
+    0 18px 50px -28px #284d4840,
+    0 1px 4px #254e3f04;
+  animation: access-appear 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.access-panel-top {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 28px;
+  color: #7e8f8b;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+.access-panel-icon {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid #dce8e3;
+  border-radius: 11px;
+  color: #3e928b;
+  background: #f4f9f6;
+}
+.access-panel-top .access-private {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  color: #86968f;
+  font-size: 9px;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+.access-panel h2 {
+  margin: 0;
+  color: #283c37;
+  font-size: 27px;
+  line-height: 1.2;
+  font-weight: 600;
+  letter-spacing: -0.045em;
+}
+.access-panel-description {
+  margin: 10px 0 28px;
+  color: #89968f;
+  font-size: 12px;
+  line-height: 1.7;
+}
+.access-form {
+  display: grid;
+  gap: 9px;
+}
+.access-form > label {
+  margin-top: 9px;
+  color: #50685c;
+  font-size: 11px;
+  font-weight: 650;
+}
+.access-form > label:first-child {
+  margin-top: 0;
+}
+.access-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 49px;
+  padding: 0 14px;
+  border: 1px solid #e0e8e3;
+  border-radius: 11px;
+  color: #93a59b;
+  background: #f9fbfa;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    background 0.2s ease;
+}
+.access-input-wrap:focus-within {
+  border-color: #72a99b;
+  color: #448e7e;
+  background: #fff;
+  box-shadow: 0 0 0 3px #e8f3eb;
+}
+.access-input-wrap > svg {
+  flex: none;
+}
+.access-input-wrap > input {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  height: 47px;
+  padding: 0;
+  border: 0;
+  outline: none !important;
+  color: #324b3d;
+  background: transparent;
+  box-shadow: none;
+  font-size: 13px;
+}
+.access-input-wrap > input:focus-visible {
+  outline: none !important;
+  box-shadow: none;
+}
+.access-input-wrap > input::placeholder {
+  color: #a4b0a8;
+}
+.access-input-wrap .access-reveal {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 28px;
+  height: 32px;
+  margin-right: -5px;
+  border: 0;
+  border-radius: 7px;
+  color: #839d8c;
+  background: transparent;
+  cursor: pointer;
+}
+.access-reveal:hover {
+  color: #397f69;
+  background: #ecf4ec;
+}
+.access-submit {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 49px;
+  width: 100%;
+  margin-top: 17px;
+  padding: 0 17px;
+  border: 1px solid #287c79;
+  border-radius: 11px;
+  color: #fff;
+  background: #2e8383;
+  box-shadow:
+    0 4px 10px #286c7220,
+    inset 0 1px 0 #ffffff15;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 650;
+  transition:
+    background 0.2s ease,
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
+}
+.access-submit > svg {
+  transition: transform 0.2s ease;
+}
+.access-submit:hover:enabled {
+  background: #256f72;
+  transform: translateY(-1px);
+  box-shadow: 0 7px 16px #286c7229;
+}
+.access-submit:hover:enabled > svg {
+  transform: translateX(3px);
+}
+.access-submit:active:enabled {
+  transform: translateY(0);
+}
+.access-page button:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+.access-error {
+  margin: 7px 0 0;
+  padding: 10px 12px;
+  border: 1px solid #f2d9df;
+  border-radius: 9px;
+  color: #a14e63;
+  background: #fff6f8;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.access-caps {
+  color: #9c742d;
+  font-size: 11px;
+}
+.access-divider {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 13px;
+  margin: 27px 0 18px;
+  color: #9aa59f;
+  font-size: 10px;
+}
+.access-divider > span {
+  flex: 1;
+  height: 1px;
+  background: #edf0ed;
+}
+.access-demo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 75px;
+  padding: 13px;
+  border: 1px solid #e4e7e9;
+  border-radius: 13px;
+  color: #796487;
+  background: #fcfbfd;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background 0.25s ease,
+    border-color 0.25s ease,
+    transform 0.25s ease;
+}
+.access-demo:hover:enabled {
+  border-color: #cab8d4;
+  background: #f6f0f9;
+  transform: translateY(-1px);
+}
+.access-demo-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  color: #9566a5;
+  background: #f2eaf6;
+}
+.access-demo b,
+.access-demo small {
+  display: block;
+}
+.access-demo b {
+  color: #655171;
+  font-size: 12px;
+  font-weight: 650;
+}
+.access-demo small {
+  margin-top: 6px;
+  color: #9b8fa1;
+  font-size: 10px;
+}
+.access-demo code {
+  padding: 1px 4px;
+  border: 1px solid #e8e0ed;
+  border-radius: 4px;
+  color: #775d84;
+  background: #fff;
+  font-family: inherit;
+  font-weight: 650;
+}
+.access-demo > svg {
+  margin-left: auto;
+  flex: none;
+}
+.access-demo-safety {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  margin: 12px 0 0;
+  color: #98a49b;
+  font-size: 9px;
+}
+.access-support {
+  margin-top: 27px;
+  padding-top: 18px;
+  border-top: 1px solid #edf0ed;
+  color: #9ba69f;
+  font-size: 10px;
+  line-height: 1.6;
+  text-align: center;
+}
+.access-service-note {
+  margin: 14px 0 0;
+  color: #8b9a90;
+  font-size: 10px;
+  line-height: 1.7;
+}
+.access-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  width: 100%;
+  max-width: 1280px;
+  margin: 0 auto;
+  color: #a2afa7;
+  font-size: 9px;
+}
+.access-spinner {
+  animation: access-spin 0.85s linear infinite;
+}
+.demo-banner {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  padding: 11px 32px;
+  border-bottom: 1px solid #e4d8ed;
+  color: #775087;
+  background: #f6eefb;
+}
+.demo-banner-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.demo-banner-label > span {
+  margin-left: 5px;
+  color: #937c9f;
+  font-size: 11px;
+}
+.demo-banner > button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  padding: 6px 9px;
+  border: 1px solid #e4d4ec;
+  border-radius: 7px;
+  color: #805991;
+  background: #fff;
+  cursor: pointer;
+  font-size: 10px;
+}
+.demo-banner > small {
+  flex-basis: 100%;
+  color: #a08ba9;
+  font-size: 10px;
+  line-height: 1.4;
+}
+.demo-document-note {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 20px;
+  border-radius: 12px;
+  color: #775388;
+  background: #f7f1fa;
+}
+.demo-document-note > svg {
+  flex: none;
+}
+.demo-document-note p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.7;
+}
+@keyframes access-appear {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes access-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (max-width: 1000px) {
+  .access-page {
+    padding: 22px 28px;
+  }
+  .access-layout {
+    gap: 40px;
+    grid-template-columns: minmax(0, 1fr) minmax(340px, 420px);
+  }
+  .access-panel {
+    padding: 26px;
+  }
+  .access-story h1 {
+    font-size: 46px;
+  }
+  .access-workflow {
+    gap: 5px;
+  }
+  .access-workflow > i {
+    width: 5px;
+  }
+  .access-workflow small {
+    font-size: 8px;
+  }
+}
+@media (max-width: 760px) {
+  .access-layout {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    margin: 26px auto;
+    gap: 18px;
+  }
+  .access-story {
+    display: none;
+  }
+  .access-panel {
+    width: 100%;
+    max-width: 430px;
+    padding: 27px;
+    border-radius: 20px;
+  }
+  .access-header {
+    max-width: 430px;
+  }
+  .access-header .brand-logo {
+    width: 155px;
+  }
+  .access-header > span {
+    max-width: 130px;
+    font-size: 9px;
+    line-height: 1.6;
+  }
+  .access-panel h2 {
+    font-size: 26px;
+  }
+  .access-footer {
+    justify-content: center;
+    text-align: center;
+  }
+  .access-footer > span:last-child {
+    display: none;
+  }
+  .demo-banner {
+    padding: 10px 18px;
+  }
+  .demo-banner-label {
+    flex-wrap: wrap;
+    font-size: 11px;
+  }
+  .demo-banner-label > span {
+    flex-basis: 100%;
+    margin-left: 25px;
+    font-size: 10px;
+  }
+  .demo-banner > button {
+    margin-left: 25px;
+  }
+  .demo-banner > small {
+    margin-left: 25px;
+  }
+}
+@media (max-width: 390px) {
+  .access-page {
+    padding: 18px;
+  }
+  .access-panel {
+    padding: 23px;
+  }
+  .access-private {
+    display: none !important;
+  }
+  .access-panel h2 {
+    font-size: 24px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .access-panel,
+  .access-spinner {
+    animation: none;
+  }
+  .access-page * {
+    transition: none !important;
+  }
+}
+
+.access-header > span {
+  color: #62766c;
+  font-size: 12px;
+}
+.access-form > label {
+  font-size: 12px;
+}
+.access-input-wrap > input {
+  font-size: 14px;
+}
+.access-input-wrap > input::placeholder {
+  color: #788b7e;
+}
+.access-panel-description {
+  color: #6f8075;
+  font-size: 13px;
+}
+.access-panel-top {
+  color: #667c6e;
+  font-size: 10px;
+}
+.access-panel-top .access-private {
+  color: #6d7f72;
+  font-size: 10px;
+}
+.access-divider {
+  color: #77877b;
+  font-size: 11px;
+}
+.access-demo small {
+  color: #83708c;
+  font-size: 11px;
+}
+.access-demo-safety {
+  color: #6c7f71;
+  font-size: 10px;
+}
+.access-support,
+.access-service-note {
+  color: #708174;
+  font-size: 11px;
+}
+.access-footer {
+  color: #718376;
+  font-size: 10px;
+}
+.access-workflow small {
+  color: #738478;
+  font-size: 10px;
+}
+.access-story-foot p {
+  color: #6e8073;
+  font-size: 11px;
+}
+.demo-banner {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+}
+.demo-workspace .app-topbar {
+  top: var(--demo-banner-height, 70px);
+}
+.demo-banner > small {
+  color: #7a6086;
+  font-size: 11px;
+}
+@media (max-width: 1000px) and (min-width: 761px) {
+  .access-workflow small {
+    font-size: 9px;
+  }
+}
+
+.access-loading {
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 22px;
+  min-height: 100dvh;
+  padding: 24px;
+  color: #6d8176;
+  background: #f5f7f6;
+  font-size: 13px;
+}
+.access-loading .brand-logo {
+  width: 200px;
+}
+.access-loader {
+  width: 24px;
+  height: 24px;
+  border: 2px solid #dce9e2;
+  border-top-color: #3b8d87;
+  border-radius: 50%;
+  animation: access-spin 0.8s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .access-loader {
+    animation: none;
+  }
+}
+/* Preserve readable controls while fitting the full entry flow on laptop displays. */
+@media (min-width: 761px) and (max-height: 860px) {
+  .access-page {
+    padding-top: 20px;
+    padding-bottom: 16px;
+  }
+  .access-header .brand-logo {
+    width: 132px;
+  }
+  .access-layout {
+    margin-top: 12px;
+    margin-bottom: 20px;
+  }
+  .access-story {
+    padding: 15px 0;
+  }
+  .access-story h1 {
+    font-size: 52px;
+  }
+  .access-description {
+    margin: 20px 0 26px;
+  }
+  .access-story-foot {
+    margin-top: 28px;
+  }
+  .access-panel {
+    padding: 24px 28px;
+    border-radius: 20px;
+  }
+  .access-panel-top {
+    margin-bottom: 18px;
+  }
+  .access-panel-description {
+    margin: 8px 0 18px;
+  }
+  .access-form {
+    gap: 7px;
+  }
+  .access-input-wrap {
+    min-height: 44px;
+  }
+  .access-input-wrap > input {
+    height: 42px;
+  }
+  .access-submit {
+    margin-top: 12px;
+    min-height: 46px;
+  }
+  .access-divider {
+    margin: 20px 0 14px;
+  }
+  .access-demo {
+    min-height: 69px;
+  }
+  .access-support {
+    margin-top: 18px;
+    padding-top: 14px;
+  }
+}
+@media (max-width: 760px) {
+  .access-layout {
+    margin-top: 18px;
+    margin-bottom: 20px;
+  }
+  .access-panel-top {
+    margin-bottom: 20px;
+  }
+  .access-panel-description {
+    margin-bottom: 20px;
+  }
+  .access-divider {
+    margin: 22px 0 16px;
+  }
+  .access-support {
+    margin-top: 22px;
+    padding-top: 15px;
+  }
+}

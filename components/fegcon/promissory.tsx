@@ -1,5 +1,7 @@
 "use client";
 
+import { privateDocumentHref } from "@/lib/private-document";
+
 import { AssociateSelect } from "./associate-select";
 
 import { apiFetch } from "@/lib/fegcon-api";
@@ -452,10 +454,10 @@ export function PromissoryNotesScreen({
                       document.status === "custodiado") && (
                       <a
                         className="text-button"
-                        href={
+                        href={privateDocumentHref(
                           "/api/?action=promissory-document-file&id=" +
-                          document.id
-                        }
+                            document.id,
+                        )}
                       >
                         Descargar
                       </a>

@@ -14,7 +14,7 @@ Se usa una superficie clara, texto de mayor tamaño, acentos teal y la identidad
 - `components/fegcon/shared.tsx`: elementos compartidos y catálogo de módulos.
 - `lib/permissions.ts`: permisos de consulta y gestión.
 - `lib/fegcon-api.ts`: transporte PHP, tiempo máximo de respuesta y lectura JSON.
-- `components/fegcon/dashboard.tsx`: inicio y acceso.
+- `components/fegcon/dashboard.tsx`: inicio. El acceso está separado en `login.tsx`, con estilos en `app/access.css`.
 - `components/fegcon/administration.tsx`, `access.tsx`: preparación del fondo, revisión, cuentas, permisos y bitácora.
 - `components/fegcon/associates.tsx`: directorio y ficha.
 - `components/fegcon/credits.tsx`, `savings.tsx`, `promissory.tsx`, `payroll.tsx`, `companies.tsx`, `records.tsx`: módulos operativos conservando sus contratos PHP.
@@ -25,7 +25,7 @@ Los módulos financieros y administrativos se cargan al abrirlos. Un fallo de re
 
 ## Integridad de los datos
 
-La interfaz sigue usando la API PHP/MySQL de cPanel. No se añadieron registros, saldos, usuarios ni transacciones de demostración. Se conservaron CSRF, permisos en servidor, revisión de operaciones y custodia privada.
+La interfaz sigue usando la API PHP/MySQL de cPanel. No se añadieron registros, saldos, usuarios ni transacciones ficticios a la base operativa. El modo de demostración posterior es independiente y utiliza únicamente el almacenamiento de la pestaña del navegador; véase `MODO-DEMO.md`. Se conservaron CSRF, permisos en servidor, revisión de operaciones y custodia privada.
 
 La ficha solicita el historial del asociado en SQL antes de ordenar los registros. Esto corrige la omisión que ocurría al filtrar en el navegador los últimos cien registros generales. Cada consulta mantiene la autorización de su módulo; la ficha oculta secciones no habilitadas. Un error parcial deja una advertencia en lugar de convertirlo en un cero confirmado.
 

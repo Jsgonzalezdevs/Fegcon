@@ -1,0 +1,1 @@
+import{_ as e,b as t}from"./index-Dcr5vIbZ.js";function n(n,r=e()){return t(r)?`#demo-document`:n}export{n as t};
