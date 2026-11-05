@@ -4,7 +4,6 @@
 
 - Usuario: `demo`.
 - Contraseña: `demo`.
-- Atajo: botón **Explora la demo** del acceso.
 - Salida: menú de la cuenta → **Cerrar sesión**.
 - Reinicio: **Restablecer demo** en el aviso superior.
 
@@ -29,7 +28,7 @@ Los archivos seleccionados en una carga de prueba no se envían al servidor ni s
 
 ## Diseño del acceso
 
-El logo es el archivo original de FEGCON. El nuevo acceso usa composición adaptable, campos con respuesta al foco, control de visibilidad de contraseña, estados de carga y error, botón de demostración y transiciones suaves. Respeta `prefers-reduced-motion` y mantiene controles nativos etiquetados para teclado y lectores de pantalla.
+El logo es el archivo original de FEGCON. El nuevo acceso usa composición adaptable, campos con respuesta al foco, control de visibilidad de contraseña, estados de carga y error, transiciones suaves. Respeta `prefers-reduced-motion` y mantiene controles nativos etiquetados para teclado y lectores de pantalla.
 
 El acceso está separado en `components/fegcon/login.tsx` y sus estilos en `app/access.css`. El acceso a las cuentas reales conserva el contrato PHP existente. Cuando ese servicio no está disponible, la pantalla permite explorar la demo igualmente.
 

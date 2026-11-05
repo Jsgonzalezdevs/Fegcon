@@ -3,10 +3,8 @@
 import {
   ArrowRight,
   ArrowUpRight,
-  Check,
   Eye,
   EyeOff,
-  FlaskConical,
   HandCoins,
   LoaderCircle,
   ShieldCheck,
@@ -27,20 +25,10 @@ export function Login({
 }) {
   const [sending, setSending] = useState(false),
     [showPassword, setShowPassword] = useState(false),
-    [capsLock, setCapsLock] = useState(false),
-    [demoLoading, setDemoLoading] = useState(false);
-  const enterDemo = async () => {
-    if (sending || demoLoading) return;
-    setDemoLoading(true);
-    try {
-      await onLogin("demo", "demo");
-    } finally {
-      setDemoLoading(false);
-    }
-  };
+    [capsLock, setCapsLock] = useState(false);
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (sending || demoLoading) return;
+    if (sending) return;
     const form = new FormData(event.currentTarget);
     setSending(true);
     try {
@@ -128,9 +116,9 @@ export function Login({
               Acceso del equipo
             </span>
           </div>
-          <h2 id="access-title">Tu jornada empieza aquí.</h2>
+          <h2 id="access-title">Qué gusto tenerte aquí.</h2>
           <p className="access-panel-description">
-            Entra a tu espacio y continúa donde lo dejaste.
+            Un espacio más simple para acompañar a nuestros asociados.
           </p>
           <form className="access-form" onSubmit={submit}>
             <label htmlFor="access-user">Usuario o correo electrónico</label>
@@ -143,7 +131,7 @@ export function Login({
                 autoComplete="username"
                 placeholder="Tu correo o usuario"
                 required
-                disabled={sending || demoLoading}
+                disabled={sending}
                 autoCapitalize="none"
                 spellCheck={false}
               />
@@ -158,7 +146,7 @@ export function Login({
                 autoComplete="current-password"
                 placeholder="Tu contraseña"
                 required
-                disabled={sending || demoLoading}
+                disabled={sending}
                 onKeyUp={(event) =>
                   setCapsLock(event.getModifierState("CapsLock"))
                 }
@@ -185,11 +173,7 @@ export function Login({
                 {error}
               </p>
             )}
-            <button
-              type="submit"
-              className="access-submit"
-              disabled={sending || demoLoading}
-            >
+            <button type="submit" className="access-submit" disabled={sending}>
               <span>
                 {sending ? "Verificando acceso…" : "Entrar a mi espacio"}
               </span>
@@ -200,39 +184,10 @@ export function Login({
               )}
             </button>
           </form>
-          <div className="access-divider">
-            <span />
-            ¿Quieres conocer el sistema?
-            <span />
-          </div>
-          <button
-            type="button"
-            className="access-demo"
-            onClick={() => void enterDemo()}
-            disabled={sending || demoLoading}
-          >
-            <span className="access-demo-icon">
-              <FlaskConical size={21} />
-            </span>
-            <span>
-              <b>{demoLoading ? "Preparando tu demo…" : "Explora la demo"}</b>
-              <small>
-                Usuario <code>demo</code> · contraseña <code>demo</code>
-              </small>
-            </span>
-            {demoLoading ? (
-              <LoaderCircle size={18} className="access-spinner" />
-            ) : (
-              <ArrowUpRight size={18} />
-            )}
-          </button>
-          <p className="access-demo-safety">
-            <Check size={13} />
-            Datos ficticios. Prueba sin modificar la base real.
-          </p>
           {serviceUnavailable && (
             <p className="access-service-note">
-              Cuentas reales sin conexión. Puedes explorar la demo.
+              No pudimos conectar con el servicio de acceso. Inténtalo de nuevo
+              en un momento.
             </p>
           )}
           <footer className="access-support">

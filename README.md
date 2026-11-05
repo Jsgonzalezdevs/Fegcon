@@ -43,7 +43,7 @@ Para revisar únicamente la interfaz sin una base conectada, inicia `npx vite --
 
 ## Cuenta de demostración
 
-En la pantalla de acceso puedes usar **usuario `demo` y contraseña `demo`**, o pulsar **Explora la demo**.
+En la pantalla de acceso puedes usar **usuario `demo` y contraseña `demo`**.
 
 La demo contiene asociados, ahorros, créditos, pagarés, cartera, pagos, empresas y nómina ficticios. Sus operaciones se simulan en la pestaña del navegador; no crea una cuenta en PHP/MySQL y no modifica la base operativa. El aviso de demostración permanece visible y permite restablecer los ejemplos. Al cerrar sesión se eliminan los cambios de la demo.
 
