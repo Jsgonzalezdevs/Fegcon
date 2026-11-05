@@ -1,0 +1,3 @@
+# Versioned cPanel build output includes dependency CSS template strings.
+# Review authored sources for whitespace; generated bundles are machine output.
+release/public/assets/* linguist-generated=true -whitespace

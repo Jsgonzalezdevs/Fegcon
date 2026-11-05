@@ -412,3 +412,21 @@ function apply_approved_change(PDO $db, int $requesterId, int $reviewerId, strin
         default: throw new RuntimeException('Tipo de cambio no autorizado.');
     }
 }
+
+/** Trusted query fragments only; the requested associate is always a bound parameter. */
+function history_rows(PDO $db, string $selectSql, string $alias, string $orderSql): array {
+    $associateId = (int) ($_GET['associate_id'] ?? 0);
+    if ($associateId < 0) json_response(['error' => 'Selecciona un asociado válido.'], 422);
+    $sql = $selectSql;
+    $params = [];
+    if ($associateId > 0) {
+        $sql .= ' WHERE ' . $alias . '.associate_id=?';
+        $params[] = $associateId;
+    }
+    $sql .= ' ORDER BY ' . $orderSql;
+    // The operational feed remains bounded; an individual file reads that person's full history.
+    if (!$associateId) $sql .= ' LIMIT 100';
+    $statement = $db->prepare($sql);
+    $statement->execute($params);
+    return $statement->fetchAll();
+}

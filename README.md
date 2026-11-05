@@ -24,3 +24,19 @@ pnpm run build:cpanel
 El paquete listo para subir queda en `release/`. Para una instalación nueva, crea una base MySQL vacía, importa `release/database/001_core.sql`, sube el contenido de `release/public/` al subdominio y ejecuta `setup.php` una sola vez para crear la cuenta Superadmin. El instalador guarda la conexión en un archivo privado fuera de `public_html`; no crees ni subas `api/config.php`. Elimina `setup.php` al terminar.
 
 Las instrucciones detalladas y el procedimiento de actualización están en [cpanel/README.md](cpanel/README.md). Actualizar los archivos conserva los datos de la base existente; para iniciar en cero, instala en una base vacía nueva. No subas secretos, copias de documentos ni datos de asociados al repositorio.
+
+## Experiencia y mantenimiento
+
+El rediseño incorpora guías de cada módulo, búsqueda de tareas, selectores de asociados con búsqueda en el servidor, filtros y exportación CSV. La aplicación usa módulos separados en `components/fegcon/` y carga las pantallas operativas al abrirlas.
+
+La estructura, las decisiones y los límites de verificación están en [Reestructuración de Gestión FEGCON](docs/REDISENO-FEGCON.md).
+
+Para verificar cambios locales:
+
+```sh
+npm test
+npx tsc --noEmit
+npm run build:cpanel
+```
+
+Para revisar únicamente la interfaz sin una base conectada, inicia `npx vite --config vite.static.config.ts` y abre `/qa.html`. Esa galería está restringida al modo de desarrollo y no se incluye en el paquete público.
