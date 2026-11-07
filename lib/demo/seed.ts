@@ -14,6 +14,8 @@ export type DemoState = {
   collections: DemoRow[];
   items: DemoRow[];
   catalog: DemoRow[];
+  individualCharges: DemoRow[];
+  benefitUses: DemoRow[];
   users: DemoRow[];
   approvals: DemoRow[];
   audit: DemoRow[];
@@ -163,6 +165,8 @@ export function createDemoState(): DemoState {
   }));
   return {
     version: 1,
+    individualCharges: [],
+    benefitUses: [],
     companies,
     associates,
     transactions,

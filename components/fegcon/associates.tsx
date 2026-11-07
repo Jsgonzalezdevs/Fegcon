@@ -1,5 +1,7 @@
 "use client";
 
+import { AssociateActivity } from "./associate-activity";
+
 import { apiFetch } from "@/lib/fegcon-api";
 
 import { Button } from "@/components/ui/button";
@@ -330,6 +332,8 @@ export function Record({
           row.product_name,
           `${row.requested_term_months} meses`,
           money(Number(row.requested_amount)),
+          ({ libranza: "Descuento por nómina", transferencia: "Transferencia", efectivo: "Efectivo", consignacion: "Consignación" } as Record<string, string>)[row.payment_method] || "Sin registrar",
+          row.priority || "normal",
           row.status,
         ]);
       const noteRows = (notes?.notes || [])
@@ -477,7 +481,7 @@ export function Record({
       ) : tab === "Créditos" ? (
         <RecordTable
           loading={loading}
-          headers={["Solicitud", "Línea", "Plazo", "Monto", "Estado"]}
+          headers={["Solicitud", "Línea", "Plazo", "Monto", "Forma de pago", "Prioridad", "Estado"]}
           rows={records.credits}
         />
       ) : (
@@ -487,6 +491,8 @@ export function Record({
           rows={records.notes}
         />
       )}
+      <AssociateActivity kind="charges" associateId={associate.id} />
+      <AssociateActivity kind="benefits" associateId={associate.id} />
     </div>
   );
 }

@@ -33,7 +33,7 @@ function load(storage: DemoStorage): DemoState {
     const raw = storage.getItem(DEMO_DATA_KEY);
     if (raw) {
       const state = JSON.parse(raw);
-      if (state.version === 1 && Array.isArray(state.associates)) return state;
+      if (state.version === 1 && Array.isArray(state.associates)) return { ...state, individualCharges: state.individualCharges || [], benefitUses: state.benefitUses || [] };
     }
   } catch {
     /* Reset invalid demonstration data only. */
@@ -213,6 +213,10 @@ export async function handleDemoRequest(
     });
   if (method === "GET") {
     switch (action) {
+      case "associate-charges":
+        return json({ entries: scoped(state.individualCharges).map(r => person(state, r)) });
+      case "associate-benefits":
+        return json({ entries: scoped(state.benefitUses).map(r => ({ ...person(state, r), convenio: state.catalog.find(c => number(c.id) === number(r.catalog_id))?.label })) });
       case "dashboard":
         return json({
           metrics: {
@@ -396,7 +400,7 @@ export async function handleDemoRequest(
     }
   }
   try {
-    let result: DemoRow = {};
+    const result: DemoRow = {};
     const id = number(values.id || url.searchParams.get("id"));
     if (action === "associates") {
       if (method === "POST") {
@@ -461,9 +465,35 @@ export async function handleDemoRequest(
         contributions_amount: withdrawal ? 0 : amount - vista,
         status: "aplicado",
       }).id;
-    } else if (action === "credit-applications") {
-      if (method === "POST") {
+    } else if (action === "associate-charges" || action === "associate-benefits") {
+      const charges = action === "associate-charges";
+      const key = charges ? "individualCharges" : "benefitUses";
+      if (charges && method === "PATCH") {
+        const row = state.individualCharges.find(r => number(r.id) === id);
+        if (!row || row.status !== "pendiente" || !["pagado", "anulado"].includes(values.status)) throw new Error("El cobro ya fue atendido o el estado no es válido.");
+        row.status = values.status;
+      } else if (method === "POST") {
         validateAssociate(state, values.associate_id);
+        const date = String(charges ? values.due_date : values.used_on);
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(Date.parse(date)) || new Date(date).toISOString().slice(0,10) !== date || !String(values.description || "").trim() || values.amount === null || values.amount === undefined || String(values.amount).trim() === "" || !Number.isFinite(Number(values.amount)) || Number(values.amount) < (charges ? 0.01 : 0) || Number(values.amount) > 999999999999.99) throw new Error("Revisa fecha, descripción y valor.");
+        if (charges && !["quincenal", "mensual"].includes(values.frequency)) throw new Error("Frecuencia inválida.");
+        if (!charges) {
+          if (!["convenio", "compra", "beneficio"].includes(values.entry_type)) throw new Error("Tipo inválido.");
+          if (values.entry_type === "convenio" && !number(values.catalog_id)) throw new Error("Selecciona el convenio utilizado.");
+          if (number(values.catalog_id) && !state.catalog.some(c => number(c.id) === number(values.catalog_id) && c.category === "convenio" && c.active)) throw new Error("El convenio no está disponible.");
+        }
+        result.id = add(state, key, { ...values, amount: Math.round(Number(values.amount)*100)/100, ...(charges ? {status: "pendiente"} : {}) }).id;
+      } else throw new Error("Método no permitido.");
+    } else if (action === "credit-applications") {
+      if (method === "PATCH" && values.operation === "terms") {
+        const row = state.applications.find(r => number(r.id) === id);
+        if (!row || !["libranza", "transferencia", "efectivo", "consignacion"].includes(values.payment_method) || !["alta", "normal", "baja"].includes(values.priority)) throw new Error("Forma de pago, prioridad o crédito inválido.");
+        row.payment_method = values.payment_method; row.priority = values.priority;
+      } else if (method === "POST") {
+        validateAssociate(state, values.associate_id);
+        // Older demo callers may omit these fields; UI always supplies them.
+        values.payment_method ??= "libranza"; values.priority ??= "normal";
+        if (!["libranza", "transferencia", "efectivo", "consignacion"].includes(values.payment_method) || !["alta", "normal", "baja"].includes(values.priority)) throw new Error("Forma de pago o prioridad inválida.");
         if (
           number(values.amount) <= 0 ||
           number(values.term_months) < 1 ||

@@ -292,6 +292,8 @@ export function CreditScreen({
   const [associates, setAssociates] = useState<ApiJson[]>([]),
     [products, setProducts] = useState<ApiJson[]>([]),
     [rows, setRows] = useState<ApiJson[]>([]);
+  const [paymentMethod, setPaymentMethod] = useState("libranza");
+  const [priority, setPriority] = useState("normal");
   const [associateId, setAssociateId] = useState(""),
     [amount, setAmount] = useState(""),
     [term, setTerm] = useState(""),
@@ -338,7 +340,10 @@ export function CreditScreen({
         ),
       );
       setProducts(productData.products || []);
-      setRows(creditData.applications || []);
+      setRows((creditData.applications || []).sort((a: ApiJson, b: ApiJson) => {
+        const rank: Record<string, number> = { alta: 0, normal: 1, baja: 2 };
+        return (rank[a.priority || "normal"] ?? 1) - (rank[b.priority || "normal"] ?? 1);
+      }));
     } catch (reason) {
       setError(
         reason instanceof Error
@@ -516,6 +521,8 @@ export function CreditScreen({
           term_months: months,
           purpose,
           credit_channel: creditChannel,
+          payment_method: paymentMethod,
+          priority,
         }),
       });
       const data = await readJson(response);
@@ -534,6 +541,7 @@ export function CreditScreen({
       setTerm("");
       setPurpose("");
       setCreditChannel("libranza");
+      setPaymentMethod("libranza"); setPriority("normal");
       await load();
       if (data.id) setDocumentsFor(Number(data.id));
     } catch {
@@ -643,6 +651,16 @@ export function CreditScreen({
                 <option value="independiente">
                   Independiente · requiere declaración de renta y codeudores
                 </option>
+              </select>
+            </label>
+            <label>Forma de pago
+              <select className="w-full rounded-md border p-2" value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)}>
+                <option value="libranza">Descuento por nómina</option><option value="transferencia">Transferencia</option><option value="efectivo">Efectivo</option><option value="consignacion">Consignación</option>
+              </select>
+            </label>
+            <label>Prioridad
+              <select className="w-full rounded-md border p-2" value={priority} onChange={e => setPriority(e.target.value)}>
+                <option value="alta">Alta</option><option value="normal">Normal</option><option value="baja">Baja</option>
               </select>
             </label>
             <label>
@@ -785,7 +803,7 @@ export function CreditScreen({
                 <TableRow>
                   <TableHead>Asociado</TableHead>
                   <TableHead>Modalidad y solicitud</TableHead>
-                  <TableHead>Plazo</TableHead>
+                  <TableHead>Plazo, pago y prioridad</TableHead>
                   <TableHead>Cupo aprobado</TableHead>
                   <TableHead>Cuota mensual</TableHead>
                   <TableHead>Estado</TableHead>
@@ -807,7 +825,10 @@ export function CreditScreen({
                             : "Libranza"}
                         </small>
                       </TableCell>
-                      <TableCell>{row.requested_term_months} meses</TableCell>
+                      <TableCell>
+                        {row.requested_term_months} meses
+                        <CreditTerms application={row} csrf={csrf} onChange={load} />
+                      </TableCell>
                       <TableCell>
                         {row.approved_multiplier
                           ? `x${row.approved_multiplier}`
@@ -993,4 +1014,35 @@ export function CreditScreen({
       </section>
     </div>
   );
+}
+
+function CreditTerms({ application, csrf, onChange }: { application: ApiJson; csrf: string; onChange: () => Promise<void> }) {
+  const manage = useCapability("credits");
+  const [editing, setEditing] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const labels: Record<string, string> = { libranza: "Descuento por nómina", transferencia: "Transferencia", efectivo: "Efectivo", consignacion: "Consignación" };
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); if (busy) return;
+    const values = Object.fromEntries(new FormData(event.currentTarget));
+    setBusy(true); setMessage("");
+    try {
+      const response = await apiFetch("/api/?action=credit-applications", { method: "PATCH", headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf }, body: JSON.stringify({ ...values, id: application.id, operation: "terms" }) });
+      const data = await readJson(response);
+      if (!response.ok) throw new Error(data.error || "No fue posible guardar.");
+      setMessage(data.pending_approval ? "Cambio enviado a revisión." : "Datos actualizados."); setEditing(false); await onChange();
+    } catch (reason) { setMessage(reason instanceof Error ? reason.message : "No fue posible guardar."); }
+    finally { setBusy(false); }
+  }
+  return <div className="space-y-2">
+    <small className="block">Pago: {labels[String(application.payment_method)] || "Sin registrar"}</small>
+    <small className="block">Prioridad: {application.priority || "normal"}</small>
+    {manage && <Button variant="outline" disabled={busy} onClick={() => setEditing(!editing)}>Editar pago y prioridad</Button>}
+    {editing && <form onSubmit={submit} className="space-y-2">
+      <label>Forma de pago<select name="payment_method" required defaultValue={application.payment_method || ""} className="w-full rounded-md border p-2"><option value="" disabled>Seleccionar</option>{Object.entries(labels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+      <label>Prioridad<select name="priority" defaultValue={application.priority || "normal"} className="w-full rounded-md border p-2"><option value="alta">Alta</option><option value="normal">Normal</option><option value="baja">Baja</option></select></label>
+      <Button type="submit" disabled={busy}>Guardar</Button>
+    </form>}
+    {message && <small role="status">{message}</small>}
+  </div>;
 }

@@ -1,5 +1,7 @@
 "use client";
 
+import { AssociateActivity } from "./associate-activity";
+
 import { downloadCsv } from "@/lib/csv";
 import { AssociateSelect } from "./associate-select";
 
@@ -227,9 +229,10 @@ export function PayrollCollectionsScreen({
     <div className="page">
       <Heading
         eyebrow="TESORERÍA"
-        title="Cobros de nómina"
+        title="Cobros"
         text="Prepara y descarga la relación de cada empresa para los días 10 o 20, registra aportes, cuotas y convenios, y concilia lo recibido. Compartir el archivo con la empresa se hace manualmente."
       />
+      <AssociateActivity kind="charges" csrf={csrf} />
       {error && (
         <div className="auth-error" role="alert">
           {error}

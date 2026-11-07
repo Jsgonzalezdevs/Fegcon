@@ -1,5 +1,7 @@
 "use client";
 
+import { AssociateActivity } from "./associate-activity";
+
 import { AssociateSelect } from "./associate-select";
 
 import { apiFetch } from "@/lib/fegcon-api";
@@ -442,6 +444,7 @@ export function ListScreen({
           </Button>
         )}
       </Heading>
+      {view === "convenios" && <AssociateActivity kind="benefits" csrf={csrf} />}
       {notice && (
         <div
           className={`flash-message ${noticeTone}`}
@@ -887,7 +890,7 @@ export function Reports({ go }: { go: (view: View) => void }) {
     ],
     [
       Banknote,
-      "Cobros de nómina",
+      "Cobros",
       "Consultar relaciones creadas.",
       "cobros",
       "payroll",
