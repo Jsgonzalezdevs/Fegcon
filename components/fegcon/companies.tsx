@@ -12,7 +12,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { Plus, X } from "lucide-react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 
 import { Heading } from "@/components/fegcon/associates";
 import {
@@ -32,6 +33,12 @@ export function CompaniesPanel({
   go: (view: View) => void;
 }) {
   const canManage = useCapability("companies");
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const addButtonRef = useRef<HTMLButtonElement>(null);
+  const closeCreateForm = () => {
+    setShowCreateForm(false);
+    addButtonRef.current?.focus();
+  };
   const [companies, setCompanies] = useState<ApiJson[]>([]),
     [loading, setLoading] = useState(true),
     [saving, setSaving] = useState(false),
@@ -88,6 +95,7 @@ export function CompaniesPanel({
       if (!response.ok)
         throw new Error(data.error || "No fue posible guardar la empresa.");
       form.reset();
+      closeCreateForm();
       if (data.pending_approval) {
         setNotice(data.message || "La empresa quedó pendiente de aprobación.");
         go("mis_solicitudes");
@@ -118,13 +126,28 @@ export function CompaniesPanel({
             <b>Empresas de libranza</b>
             <small>Contactos y datos que usarás en los cobros de nómina.</small>
           </div>
-          <Button
-            variant="outline"
-            onClick={() => void load()}
-            disabled={loading}
-          >
-            Actualizar
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            {canManage && (
+              <Button
+                ref={addButtonRef}
+                className="violet-button"
+                type="button"
+                aria-expanded={showCreateForm}
+                aria-controls="create-company-form"
+                onClick={() => setShowCreateForm(true)}
+              >
+                <Plus aria-hidden="true" />
+                Agregar empresa
+              </Button>
+            )}
+            <Button
+              variant="outline"
+              onClick={() => void load()}
+              disabled={loading}
+            >
+              Actualizar
+            </Button>
+          </div>
           <small>{companies.length} activas</small>
         </div>
         {error && (
@@ -149,17 +172,34 @@ export function CompaniesPanel({
             {notice}
           </p>
         )}
-        {canManage ? (
+        {canManage && showCreateForm && (
           <form
+            id="create-company-form"
+            aria-labelledby="create-company-title"
             className="p-6 grid gap-3 border-b md:grid-cols-2"
             onSubmit={submit}
           >
+            <div className="flex items-center justify-between gap-3 md:col-span-2">
+              <b id="create-company-title">Crear empresa</b>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                aria-label="Cerrar formulario de crear empresa"
+                title="Cerrar"
+                onClick={closeCreateForm}
+                disabled={saving}
+              >
+                <X aria-hidden="true" />
+              </Button>
+            </div>
             <label>
               Nombre de la empresa
               <Input
                 name="name"
                 maxLength={190}
                 autoComplete="organization"
+                autoFocus
                 required
                 disabled={saving}
               />
@@ -207,7 +247,8 @@ export function CompaniesPanel({
               )}
             </div>
           </form>
-        ) : (
+        )}
+        {!canManage && (
           <div className="empty-state role-read-only-note">
             <b>Modo de consulta</b>
             <small>

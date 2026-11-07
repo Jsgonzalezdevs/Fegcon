@@ -14,6 +14,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Table,
   TableBody,
@@ -51,6 +52,14 @@ import {
   View,
 } from "@/components/fegcon/shared";
 
+const defaultPolicyCopy = {
+  savings: "30% · Ahorro a la vista\nDisponibilidad inmediata para el asociado.\n\n70% · Aportes\nBase para calcular el cupo de crédito: 3, 4 o 5 veces este saldo, según evaluación de la solicitud.",
+  credit: "Tasa: 2% mensual fija, aplicada al saldo pendiente.\n\nPlazo: de 1 a 60 meses.\n\nLibranza: dos últimos desprendibles de pago y certificación laboral.\n\nIndependiente: declaración de renta y uno o dos codeudores, según el monto evaluado en cada solicitud.",
+  collections: "El fondo cobra aportes y cuotas a cada asociado quincenal o mensualmente. Prepara la relación y envíala por WhatsApp desde el canal habitual.\n\nLas relaciones de libranza se preparan para los días 10 y 20 e incluyen aportes, cuotas de crédito y convenios cuando aplique.\n\nEnvío manual: FEGCON todavía no tiene una integración de WhatsApp conectada. El sistema no envía mensajes por su cuenta.",
+  documents: "FEGCON conserva aproximadamente siete documentos por crédito. Se escanean y se guardan en la carpeta digital del asociado; sus nombres y la política exacta de copias aún deben definirse.",
+  roles: "Supervisor: puede acceder a los módulos y acciones que se habiliten para su perfil.\n\nSuperadmin: mantiene acceso completo a la operación, las cuentas y la configuración.",
+};
+
 export function BusinessRulesPanel({
   csrf,
   role,
@@ -68,6 +77,11 @@ export function BusinessRulesPanel({
     [error, setError] = useState(""),
     [loading, setLoading] = useState(true),
     [saving, setSaving] = useState(false);
+  const [policyCopy, setPolicyCopy] = useState(defaultPolicyCopy);
+  const [copyLoading, setCopyLoading] = useState(true);
+  const [copySaving, setCopySaving] = useState(false);
+  const [copyNotice, setCopyNotice] = useState("");
+  const [copyError, setCopyError] = useState("");
   const load = useCallback(async (preferredMonth?: string) => {
     setLoading(true);
     setError("");
@@ -113,6 +127,36 @@ export function BusinessRulesPanel({
     }, 0);
     return () => window.clearTimeout(timer);
   }, [load]);
+  useEffect(() => {
+    let active = true;
+    void apiFetch("/api/?action=settings", { credentials: "same-origin" })
+      .then(readJson)
+      .then((data) => {
+        if (active && data.settings?.policy_copy)
+          setPolicyCopy({ ...defaultPolicyCopy, ...data.settings.policy_copy });
+      })
+      .catch(() => {
+        if (active) setCopyError("No fue posible cargar los textos configurados.");
+      })
+      .finally(() => { if (active) setCopyLoading(false); });
+    return () => { active = false; };
+  }, []);
+  const savePolicyCopy = async (event: FormEvent) => {
+    event.preventDefault();
+    setCopySaving(true); setCopyError(""); setCopyNotice("");
+    try {
+      const response = await apiFetch("/api/?action=settings", {
+        method: "POST", credentials: "same-origin",
+        headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf },
+        body: JSON.stringify({ policy_copy: policyCopy }),
+      });
+      const data = await readJson(response);
+      if (!response.ok) throw new Error(data.error || "No fue posible guardar los textos.");
+      setCopyNotice("Textos del fondo guardados.");
+    } catch (reason) {
+      setCopyError(reason instanceof Error ? reason.message : "No fue posible guardar los textos.");
+    } finally { setCopySaving(false); }
+  };
   const saveRate = async (event: FormEvent) => {
     event.preventDefault();
     setSaving(true);
@@ -148,50 +192,24 @@ export function BusinessRulesPanel({
       {!embedded && (
         <Heading
           eyebrow="REGLAS DEL FONDO"
-          title="Políticas financieras"
-          text="Las condiciones del fondo son fijas. La tasa de usura se registra cada mes."
+          title="Información del fondo"
+          text="Edita aquí los textos informativos que consulta el equipo."
         />
       )}
+      <form onSubmit={savePolicyCopy}>
       <section className="data-panel">
         <div className="table-tools">
           <b>Ahorros y aportes</b>
-          <small>Distribución fija del ahorro total del asociado</small>
+          <small>Información editable para el equipo</small>
         </div>
-        <div className="p-6 grid gap-3 md:grid-cols-2">
-          <div className="rounded-xl border p-4">
-            <b>30% · Ahorro a la vista</b>
-            <p>Disponibilidad inmediata para el asociado.</p>
-          </div>
-          <div className="rounded-xl border p-4">
-            <b>70% · Aportes</b>
-            <p>
-              Base para calcular el cupo de crédito: 3, 4 o 5 veces este saldo,
-              según evaluación de la solicitud.
-            </p>
-          </div>
-        </div>
+        <div className="p-6"><Textarea aria-label="Texto de ahorros y aportes" value={policyCopy.savings} disabled={copyLoading || role !== "superadmin"} onChange={(event) => setPolicyCopy({ ...policyCopy, savings: event.target.value })} rows={5} /></div>
       </section>
       <section className="data-panel mt-6">
         <div className="table-tools">
           <b>Crédito de libre inversión</b>
-          <small>Única línea de crédito definida por FEGCON</small>
+          <small>Condiciones informativas</small>
         </div>
-        <div className="p-6 grid gap-3 md:grid-cols-2">
-          <p>
-            <b>Tasa:</b> 2% mensual fija, aplicada al saldo pendiente.
-          </p>
-          <p>
-            <b>Plazo:</b> de 1 a 60 meses.
-          </p>
-          <p>
-            <b>Libranza:</b> dos últimos desprendibles de pago y certificación
-            laboral.
-          </p>
-          <p>
-            <b>Independiente:</b> declaración de renta y uno o dos codeudores,
-            según el monto evaluado en cada solicitud.
-          </p>
-        </div>
+        <div className="p-6"><Textarea aria-label="Texto de crédito" value={policyCopy.credit} disabled={copyLoading || role !== "superadmin"} onChange={(event) => setPolicyCopy({ ...policyCopy, credit: event.target.value })} rows={6} /></div>
       </section>
       <section className="data-panel mt-6">
         <div className="table-tools">
@@ -208,10 +226,7 @@ export function BusinessRulesPanel({
           )}
         </div>
         <div className="p-6">
-          <p className="font-semibold">
-            Capital de la cuota × (tasa de usura vigente ÷ 100) ÷ 360 × días en
-            mora
-          </p>
+          <p className="font-semibold">La fórmula se aplica automáticamente con la tasa registrada para cada período.</p>
           {error && (
             <div className="auth-error mt-3" role="alert">
               {error}
@@ -312,56 +327,25 @@ export function BusinessRulesPanel({
           <b>Cobros y recaudo</b>
           <small>Reglas de periodicidad y envío</small>
         </div>
-        <div className="p-6 grid gap-2">
-          <p>
-            El fondo cobra aportes y cuotas a cada asociado quincenal o
-            mensualmente. Prepara la relación y envíala por WhatsApp desde el
-            canal habitual.
-          </p>
-          <p>
-            Las relaciones de libranza se preparan para los días 10 y 20 e
-            incluyen aportes, cuotas de crédito y convenios cuando aplique.
-          </p>
-          <div className="form-guidance" role="note">
-            <div>
-              <b>Envío manual</b>
-              <small>
-                FEGCON todavía no tiene una integración de WhatsApp conectada.
-                El sistema no envía mensajes por su cuenta.
-              </small>
-            </div>
-          </div>
-        </div>
+        <div className="p-6"><Textarea aria-label="Texto de cobros y recaudo" value={policyCopy.collections} disabled={copyLoading || role !== "superadmin"} onChange={(event) => setPolicyCopy({ ...policyCopy, collections: event.target.value })} rows={6} /></div>
       </section>
       <section className="data-panel mt-6">
         <div className="table-tools">
           <b>Pagarés y documentos</b>
           <small>Expediente digital por asociado</small>
         </div>
-        <div className="p-6">
-          <p>
-            FEGCON conserva aproximadamente siete documentos por crédito. Se
-            escanean y se guardan en la carpeta digital del asociado; sus
-            nombres y la política exacta de copias aún deben definirse.
-          </p>
-        </div>
+        <div className="p-6"><Textarea aria-label="Texto de pagarés y documentos" value={policyCopy.documents} disabled={copyLoading || role !== "superadmin"} onChange={(event) => setPolicyCopy({ ...policyCopy, documents: event.target.value })} rows={4} /></div>
       </section>
       <section className="data-panel mt-6">
         <div className="table-tools">
           <b>Perfiles de acceso</b>
           <small>Permisos ajustables desde el Centro de control</small>
         </div>
-        <div className="p-6 grid gap-3 md:grid-cols-2">
-          <p>
-            <b>Supervisor:</b> puede acceder a los módulos y acciones que se
-            habiliten para su perfil.
-          </p>
-          <p>
-            <b>Superadmin:</b> mantiene acceso completo a la operación, las
-            cuentas y la configuración.
-          </p>
-        </div>
+        <div className="p-6"><Textarea aria-label="Texto de perfiles de acceso" value={policyCopy.roles} disabled={copyLoading || role !== "superadmin"} onChange={(event) => setPolicyCopy({ ...policyCopy, roles: event.target.value })} rows={4} /></div>
       </section>
+      {role === "superadmin" && <div className="mt-4 flex items-center gap-3"><Button className="violet-button" type="submit" disabled={copyLoading || copySaving}>{copySaving ? "Guardando…" : "Guardar textos"}</Button>{copyNotice && <small role="status">{copyNotice}</small>}</div>}
+      {copyError && <div className="auth-error mt-3" role="alert">{copyError}</div>}
+      </form>
     </div>
   );
 }
@@ -1100,6 +1084,10 @@ export type ApprovalDecision = {
 };
 
 export const approvalOperationNames: Record<string, string> = {
+  credit_terms: "Forma de pago y prioridad de crédito",
+  associate_charge_create: "Cobro individual",
+  associate_charge_status: "Estado de cobro individual",
+  associate_benefit_create: "Uso de convenio, compra o beneficio",
   associate_create: "Alta de asociado",
   associate_update: "Edición de asociado",
   associate_retire: "Retiro de asociado",
@@ -1125,6 +1113,8 @@ export const approvalOperationNames: Record<string, string> = {
 };
 
 export const approvalFieldNames: Record<string, string> = {
+  payment_method: "Forma de pago", priority: "Prioridad", frequency: "Frecuencia",
+  entry_type: "Tipo de uso", used_on: "Fecha de uso", description: "Descripción", catalog_id: "Convenio",
   id: "Identificador",
   name: "Asociado",
   firstName: "Nombres",

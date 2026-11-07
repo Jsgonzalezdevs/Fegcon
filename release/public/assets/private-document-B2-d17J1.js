@@ -1,0 +1,1 @@
+import{S as e,y as t}from"./index-BRVGPIBo.js";function n(n,r=t()){return e(r)?`#demo-document`:n}export{n as t};

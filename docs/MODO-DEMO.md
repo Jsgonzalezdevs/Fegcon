@@ -9,7 +9,9 @@
 
 Los ejemplos incluyen siete asociados activos y uno pendiente, tres empresas, aportes, una afiliación por revisar, créditos en distintos estados, cuotas, recaudos, obligaciones, pagarés, una relación de nómina y un convenio. Los nombres contienen «Demo», los documentos empiezan por `DEMO-` y los correos usan dominios reservados de ejemplo.
 
-Se puede buscar, consultar y registrar datos ficticios. Los aportes y retiros cambian los saldos de la demo; los pagos pueden aplicarse a cuotas; las afiliaciones aprobadas crean asociados de ejemplo. Un crédito nuevo requiere sus soportes simulados antes de aprobarse y genera cuotas al simular el desembolso. Las decisiones y cambios aparecen en la bitácora local.
+Se puede buscar, consultar y registrar datos ficticios en los módulos habilitados para la cuenta. Los aportes y retiros cambian los saldos; los pagos pueden aplicarse a cuotas; las afiliaciones aprobadas crean asociados de ejemplo. Un crédito nuevo requiere sus soportes simulados antes de aprobarse y genera cuotas al simular el desembolso. Las decisiones y cambios aparecen en la bitácora local.
+
+Los cambios se guardan en el almacenamiento local persistente del navegador y se conservan al cerrar sesión. **Descargar respaldo** exporta todos los datos de la demo a un archivo JSON; **Restaurar respaldo** carga ese archivo en el navegador actual y reemplaza los datos que tenga allí. Este respaldo no se sincroniza con otros dispositivos por sí solo.
 
 Las cuentas creadas desde la demo son ejemplos visuales; no permiten iniciar sesión real. La entrada pública de demostración sigue siendo `demo / demo`.
 
@@ -17,12 +19,12 @@ Las cuentas creadas desde la demo son ejemplos visuales; no permiten iniciar ses
 
 `lib/fegcon-api.ts` detecta únicamente el acceso demo o una sesión demo activa y carga el simulador `lib/demo/api.ts`. En ese modo, todas las llamadas pasan por el simulador; una ruta no implementada devuelve un error local, nunca una llamada al servidor real.
 
-El simulador utiliza solo estas claves de `sessionStorage`:
+El simulador guarda el estado de sesión en `sessionStorage` y los datos persistentes en `localStorage`:
 
 - `fegcon.demo.active.v1`
 - `fegcon.demo.data.v1`
 
-No se insertan cuentas de demostración en PHP/MySQL ni se modifican sus permisos o mecanismos de autenticación. El cierre de sesión demo elimina únicamente sus claves y no llama al cierre de sesión PHP. Un indicador en memoria evita volver accidentalmente al transporte real si se borra el almacenamiento durante una sesión demo abierta.
+No se insertan cuentas de demostración en PHP/MySQL ni se modifican sus permisos o mecanismos de autenticación. El cierre de sesión demo borra solo el estado de sesión y no llama al cierre de sesión PHP. Un indicador en memoria evita volver accidentalmente al transporte real si se borra el almacenamiento durante una sesión demo abierta.
 
 Los archivos seleccionados en una carga de prueba no se envían al servidor ni se guardan: solo se conserva su nombre, tipo y tamaño como referencia local. Abrir un soporte muestra una explicación de la simulación. No deben seleccionarse documentos reales. Los CSV exportados llevan `DEMO` en el nombre y corresponden exclusivamente a los ejemplos cargados.
 

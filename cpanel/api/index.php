@@ -208,10 +208,11 @@ if ($action === 'settings' && $method === 'GET') {
 if ($action === 'settings' && $method === 'POST') {
     $current = require_user(['superadmin']); verify_csrf();
     $input = body();
-    $organization = is_array($input['organization'] ?? null) ? $input['organization'] : [];
+    $hasOrganization = is_array($input['organization'] ?? null);
+    $organization = $hasOrganization ? $input['organization'] : [];
     $organization = ['name' => substr(clean($organization['name'] ?? ''), 0, 190), 'nit' => substr(clean($organization['nit'] ?? ''), 0, 50), 'email' => substr(clean($organization['email'] ?? ''), 0, 190), 'currency' => 'COP'];
     $save = $db->prepare('INSERT INTO app_settings (setting_key, setting_value, updated_by) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value), updated_by=VALUES(updated_by)');
-    $save->execute(['organization', json_encode($organization, JSON_UNESCAPED_UNICODE), $current['id']]);
+    if ($hasOrganization) $save->execute(['organization', json_encode($organization, JSON_UNESCAPED_UNICODE), $current['id']]);
     $modules = [];
     if (is_array($input['modules'] ?? null)) {
         $allowed = ['afiliaciones', 'ahorros', 'creditos', 'cobros', 'pagos'];
@@ -221,6 +222,21 @@ if ($action === 'settings' && $method === 'POST') {
     } else {
         $existing = $db->query('SELECT setting_value FROM app_settings WHERE setting_key="modules"')->fetchColumn();
         $modules = is_string($existing) ? (json_decode($existing, true) ?: []) : [];
+    }
+    if (is_array($input['policy_copy'] ?? null)) {
+        $defaults = [
+            'savings' => '', 'credit' => '', 'collections' => '',
+            'documents' => '', 'roles' => '',
+        ];
+        $copy = [];
+        foreach ($defaults as $key => $_) {
+            $value = $input['policy_copy'][$key] ?? '';
+            if (!is_string($value) || mb_strlen($value) > 5000) {
+                json_response(['error' => 'Revisa los textos: cada campo admite hasta 5.000 caracteres.'], 422);
+            }
+            $copy[$key] = trim($value);
+        }
+        $save->execute(['policy_copy', json_encode($copy, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR), $current['id']]);
     }
     audit($db, $current['id'], 'configuracion', 0, 'actualizar', 'Configuración general');
     json_response(['organization' => $organization, 'modules' => $modules]);

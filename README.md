@@ -45,6 +45,6 @@ Para revisar únicamente la interfaz sin una base conectada, inicia `npx vite --
 
 En la pantalla de acceso puedes usar **usuario `demo` y contraseña `demo`**.
 
-La demo contiene asociados, ahorros, créditos, pagarés, cartera, pagos, empresas y nómina ficticios. Sus operaciones se simulan en la pestaña del navegador; no crea una cuenta en PHP/MySQL y no modifica la base operativa. El aviso de demostración permanece visible y permite restablecer los ejemplos. Al cerrar sesión se eliminan los cambios de la demo.
+La demo contiene asociados, ahorros, créditos, pagarés, cartera, pagos, empresas y nómina ficticios. Sus operaciones se simulan en el navegador; no crea una cuenta en PHP/MySQL y no modifica la base operativa. Los cambios permanecen guardados en ese navegador al cerrar sesión. Desde el aviso puedes descargar un respaldo JSON, restaurar uno o restablecer los ejemplos.
 
 Los soportes se simulan guardando solo su nombre y metadatos; no se envía ni se conserva su contenido. Los CSV descargados desde la demo llevan `DEMO` en el nombre. Consulta [Modo de demostración](docs/MODO-DEMO.md) para conocer su alcance y verificación.

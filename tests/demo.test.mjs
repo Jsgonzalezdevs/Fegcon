@@ -332,7 +332,7 @@ test("reset and logout touch only demo storage, retaining unrelated real-session
 test("active demo has no network fallback, including unsupported routes and after storage is cleared", async (t) => {
   const storage = memoryStorage();
   Object.defineProperty(globalThis, "window", {
-    value: { sessionStorage: storage },
+    value: { sessionStorage: storage, localStorage: storage },
     configurable: true,
   });
   t.after(() => {

@@ -103,6 +103,13 @@ function db(): PDO {
     $pdo->exec("CREATE TABLE IF NOT EXISTS promissory_notes (id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY, associate_id INT UNSIGNED NOT NULL, credit_application_id BIGINT UNSIGNED NULL, note_number VARCHAR(100) NOT NULL UNIQUE, status ENUM('borrador','pendiente_firma','firmado','custodiado','anulado') NOT NULL DEFAULT 'borrador', notes VARCHAR(255) NULL, created_by INT UNSIGNED NOT NULL, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (associate_id) REFERENCES associates(id), FOREIGN KEY (credit_application_id) REFERENCES credit_applications(id), FOREIGN KEY (created_by) REFERENCES internal_users(id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
     $pdo->exec("CREATE TABLE IF NOT EXISTS promissory_documents (id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY, promissory_note_id BIGINT UNSIGNED NOT NULL, label VARCHAR(120) NOT NULL, original_name VARCHAR(255) NOT NULL, storage_key VARCHAR(64) NOT NULL UNIQUE, mime_type VARCHAR(80) NOT NULL, byte_size INT UNSIGNED NOT NULL, status ENUM('pendiente','custodiado','rechazado','retirado') NOT NULL DEFAULT 'pendiente', created_by INT UNSIGNED NOT NULL, reviewed_by INT UNSIGNED NULL, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, reviewed_at TIMESTAMP NULL, FOREIGN KEY (promissory_note_id) REFERENCES promissory_notes(id), FOREIGN KEY (created_by) REFERENCES internal_users(id), FOREIGN KEY (reviewed_by) REFERENCES internal_users(id), KEY promissory_documents_note_status_idx (promissory_note_id,status)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
     $pdo->exec("CREATE TABLE IF NOT EXISTS credit_documents (id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY, credit_application_id BIGINT UNSIGNED NOT NULL, label VARCHAR(80) NOT NULL, original_name VARCHAR(255) NOT NULL, storage_key VARCHAR(64) NOT NULL UNIQUE, mime_type VARCHAR(80) NOT NULL, byte_size INT UNSIGNED NOT NULL, status ENUM('pendiente','custodiado','rechazado','retirado') NOT NULL DEFAULT 'pendiente', created_by INT UNSIGNED NOT NULL, reviewed_by INT UNSIGNED NULL, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, reviewed_at TIMESTAMP NULL, FOREIGN KEY (credit_application_id) REFERENCES credit_applications(id), FOREIGN KEY (created_by) REFERENCES internal_users(id), FOREIGN KEY (reviewed_by) REFERENCES internal_users(id), KEY credit_documents_application_status_idx (credit_application_id,status)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    foreach (['payment_method' => "VARCHAR(30) NULL", 'priority' => "VARCHAR(10) NOT NULL DEFAULT 'normal'"] as $column => $definition) {
+        $check=$pdo->prepare('SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name=? AND column_name=?');
+        $check->execute(['credit_applications',$column]);
+        if (!(int)$check->fetchColumn()) $pdo->exec('ALTER TABLE credit_applications ADD COLUMN '.$column.' '.$definition);
+    }
+    $pdo->exec("CREATE TABLE IF NOT EXISTS associate_charges (id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY, associate_id INT UNSIGNED NOT NULL, frequency VARCHAR(10) NOT NULL, due_date DATE NOT NULL, description VARCHAR(255) NOT NULL, amount DECIMAL(14,2) NOT NULL, status VARCHAR(15) NOT NULL DEFAULT 'pendiente', created_by INT UNSIGNED NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (associate_id) REFERENCES associates(id), FOREIGN KEY (created_by) REFERENCES internal_users(id), KEY charge_period (due_date,frequency)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS associate_benefits (id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY, associate_id INT UNSIGNED NOT NULL, catalog_id INT UNSIGNED NULL, entry_type VARCHAR(10) NOT NULL, used_on DATE NOT NULL, description VARCHAR(255) NOT NULL, amount DECIMAL(14,2) NOT NULL DEFAULT 0, created_by INT UNSIGNED NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (associate_id) REFERENCES associates(id), FOREIGN KEY (catalog_id) REFERENCES configuration_catalog(id), FOREIGN KEY (created_by) REFERENCES internal_users(id), KEY benefit_associate_date (associate_id,used_on)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
     return $pdo;
 }
 
@@ -175,6 +182,8 @@ function enforce_module_permission(PDO $db, string $action, string $method, arra
         'products' => ['credits', ['GET' => 'view']],
         'payroll-collections' => ['payroll', ['GET' => 'view', 'POST' => 'manage', 'PATCH' => 'manage']],
         'payroll-items' => ['payroll', ['GET' => 'view', 'POST' => 'manage', 'PATCH' => 'manage', 'DELETE' => 'manage']],
+        'associate-charges' => ['payroll', ['GET' => 'view', 'POST' => 'manage', 'PATCH' => 'manage']],
+        'associate-benefits' => ['convenios', ['GET' => 'view', 'POST' => 'manage']],
         'dashboard' => ['inicio', ['GET' => 'view']],
     ];
     if (!isset($routes[$action]) || !isset($routes[$action][1][$method])) return;
@@ -316,6 +325,28 @@ function audit(PDO $db, int $userId, string $entity, int $entityId, string $acti
 
 function apply_approved_change(PDO $db, int $requesterId, int $reviewerId, string $operation, array $v): array {
     switch ($operation) {
+        case 'associate_charge_create':
+        case 'associate_benefit_create':
+            $v=validate_associate_entry($db,$operation,$v);
+            if ($operation==='associate_charge_create') {
+                $q=$db->prepare('INSERT INTO associate_charges(associate_id,frequency,due_date,description,amount,created_by) VALUES(?,?,?,?,?,?)');
+                $q->execute([$v['associate_id'],$v['frequency'],$v['due_date'],$v['description'],$v['amount'],$requesterId]);
+            } else {
+                $q=$db->prepare('INSERT INTO associate_benefits(associate_id,catalog_id,entry_type,used_on,description,amount,created_by) VALUES(?,?,?,?,?,?,?)');
+                $q->execute([$v['associate_id'],$v['catalog_id'],$v['entry_type'],$v['used_on'],$v['description'],$v['amount'],$requesterId]);
+            }
+            $id=(int)$db->lastInsertId();audit($db,$reviewerId,$operation,$id,'registrar',$v['description']);return ['id'=>$id];
+        case 'associate_charge_status':
+            $id=(int)($v['id']??0);$status=clean($v['status']??'');
+            if(!in_array($status,['pagado','anulado'],true))throw new RuntimeException('Estado inválido.');
+            $q=$db->prepare('UPDATE associate_charges SET status=? WHERE id=? AND status="pendiente"');$q->execute([$status,$id]);
+            if(!$q->rowCount())throw new RuntimeException('El cobro ya fue atendido o no existe.');
+            audit($db,$reviewerId,'cobro_individual',$id,$status,'');return ['id'=>$id];
+        case 'credit_terms':
+            $terms=credit_terms($v);$id=(int)($v['id']??0);
+            $q=$db->prepare('SELECT id FROM credit_applications WHERE id=? FOR UPDATE');$q->execute([$id]);if(!$q->fetchColumn())throw new RuntimeException('El crédito no existe.');
+            $q=$db->prepare('UPDATE credit_applications SET payment_method=?,priority=? WHERE id=?');$q->execute([$terms['payment_method'],$terms['priority'],$id]);
+            audit($db,$reviewerId,'credito',$id,'actualizar','Forma de pago y prioridad');return ['id'=>$id];
         case 'company_create':
             $name=substr(clean($v['company_name']??''),0,190);$taxId=substr(clean($v['tax_id']??''),0,50);$contact=substr(clean($v['contact_name']??''),0,160);$email=substr(clean($v['contact_email']??''),0,190);
             if(!$name)throw new RuntimeException('El nombre de la empresa es obligatorio.');
@@ -362,7 +393,9 @@ function apply_approved_change(PDO $db, int $requesterId, int $reviewerId, strin
             require_core_product($db, $product, 'credito');
             $balance = active_savings_components($db, $associate, true);
             if ($amount > max(0,$balance['aportes']) * 5) throw new RuntimeException('El monto solicitado supera el cupo máximo de cinco veces los aportes.');
-            $q = $db->prepare('INSERT INTO credit_applications(associate_id,product_id,requested_amount,requested_term_months,purpose,credit_channel,created_by) VALUES(?,?,?,?,?,?,?)'); $q->execute([$associate,$product,$amount,$term,substr(clean($v['purpose'] ?? ''),0,255),$channel,$requesterId]);
+            // Preserve pending requests created before payment metadata was introduced.
+            $terms=array_key_exists('payment_method',$v)?credit_terms($v):['payment_method'=>null,'priority'=>'normal'];
+            $q = $db->prepare('INSERT INTO credit_applications(associate_id,product_id,requested_amount,requested_term_months,purpose,credit_channel,payment_method,priority,created_by) VALUES(?,?,?,?,?,?,?,?,?)'); $q->execute([$associate,$product,$amount,$term,substr(clean($v['purpose'] ?? ''),0,255),$channel,$terms['payment_method'],$terms['priority'],$requesterId]);
             $id = (int) $db->lastInsertId(); audit($db,$reviewerId,'credito',$id,'solicitar_aprobado','Solicitud'); return ['entity'=>'credito','id'=>$id];
         case 'credit_decision':
             $id=(int)($v['id']??0); $status=clean($v['status']??''); if (!$id || !in_array($status,['aprobada','rechazada'],true)) throw new RuntimeException('Decisión de crédito inválida.');
@@ -429,4 +462,25 @@ function history_rows(PDO $db, string $selectSql, string $alias, string $orderSq
     $statement = $db->prepare($sql);
     $statement->execute($params);
     return $statement->fetchAll();
+}
+
+function credit_terms(array $v): array {
+    $method=clean($v['payment_method']??'');$priority=clean($v['priority']??'normal');
+    if(!in_array($method,['libranza','transferencia','efectivo','consignacion'],true)||!in_array($priority,['alta','normal','baja'],true))throw new RuntimeException('Selecciona una forma de pago y prioridad válidas.');
+    return ['payment_method'=>$method,'priority'=>$priority];
+}
+function validate_associate_entry(PDO $db,string $operation,array $v): array {
+    $a=(int)($v['associate_id']??0);$q=$db->prepare('SELECT id FROM associates WHERE id=? AND status="activo"');$q->execute([$a]);if(!$q->fetchColumn())throw new RuntimeException('Selecciona un asociado activo.');
+    $description=substr(clean($v['description']??''),0,255);$amount=$v['amount']??null;
+    if(!$description||!is_numeric($amount)||!is_finite((float)$amount)||(float)$amount<0||(float)$amount>999999999999.99)throw new RuntimeException('Indica una descripción y un valor válido.');
+    $v['associate_id']=$a;$v['description']=$description;$v['amount']=round((float)$amount,2);
+    if($operation==='associate_charge_create') {
+        if(!in_array($v['frequency']??'', ['quincenal','mensual'],true)||!valid_iso_date(clean($v['due_date']??''))||$v['amount']<=0)throw new RuntimeException('Indica frecuencia, vencimiento y valor positivo.');
+    } else {
+        if(!in_array($v['entry_type']??'', ['convenio','compra','beneficio'],true)||!valid_iso_date(clean($v['used_on']??'')))throw new RuntimeException('Indica tipo y fecha de uso válidos.');
+        $v['catalog_id']=(int)($v['catalog_id']??0)?:null;
+        if($v['entry_type']==='convenio'&&!$v['catalog_id'])throw new RuntimeException('Selecciona el convenio utilizado.');
+        if($v['catalog_id']){$q=$db->prepare('SELECT id FROM configuration_catalog WHERE id=? AND category="convenio" AND active=1');$q->execute([$v['catalog_id']]);if(!$q->fetchColumn())throw new RuntimeException('El convenio no está disponible.');}
+    }
+    return $v;
 }

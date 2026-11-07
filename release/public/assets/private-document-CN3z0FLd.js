@@ -1,0 +1,1 @@
+import{S as e,y as t}from"./index-B1g1dhtP.js";function n(n,r=t()){return e(r)?`#demo-document`:n}export{n as t};
