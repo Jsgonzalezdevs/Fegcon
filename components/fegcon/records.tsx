@@ -59,7 +59,14 @@ export const liveScreens = {
     title: "Afiliaciones",
     text: "Solicitudes de afiliación registradas en el sistema.",
     action: "Nueva solicitud",
-    heads: ["Solicitante", "Empresa", "Fecha", "Documentos", "Estado"],
+    heads: [
+      "Solicitante",
+      "Empresa",
+      "Fecha de solicitud",
+      "Fecha de aceptación",
+      "Documentos",
+      "Estado",
+    ],
     endpoint: "affiliations",
     key: "requests",
   },
@@ -178,6 +185,9 @@ export function ListScreen({
               `${row.first_name} ${row.last_name}`,
               row.company_name || "Sin empresa",
               new Date(row.created_at).toLocaleDateString("es-CO"),
+              row.status === "aprobada" && row.reviewed_at
+                ? new Date(row.reviewed_at).toLocaleDateString("es-CO")
+                : "—",
               row.documents_status === "completos" ? "Completos" : "Pendientes",
             ],
             status: row.status,
