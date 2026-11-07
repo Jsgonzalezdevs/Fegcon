@@ -3,10 +3,10 @@ export function BrandLogo() {
   return (
     <img
       className="brand-logo"
-      src="/brand/fegcon-original.jpg"
+      src="/brand/fegcon-original-transparente-d1050291ae39.png"
       alt="FEGCON · Fondo de Empleados"
-      width={480}
-      height={248}
+      width={447}
+      height={447}
       decoding="async"
     />
   );
