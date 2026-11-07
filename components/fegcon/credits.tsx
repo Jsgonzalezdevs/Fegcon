@@ -649,13 +649,15 @@ export function CreditScreen({
                 required
               />
             </label>
-            <label>
-              Modalidad
-              <FieldHelp title="¿Qué modalidad corresponde?">
-                Libranza corresponde al descuento por nómina de una empresa
-                vinculada. Independiente requiere declaración de renta y
-                evaluación de codeudores.
-              </FieldHelp>
+            <label className="credit-modality-field">
+              <span className="credit-field-title">
+                Modalidad
+                <FieldHelp title="¿Qué modalidad corresponde?">
+                  Libranza corresponde al descuento por nómina de una empresa
+                  vinculada. Independiente requiere declaración de renta y
+                  evaluación de codeudores.
+                </FieldHelp>
+              </span>
               <select
                 value={creditChannel}
                 onChange={(event) => setCreditChannel(event.target.value)}

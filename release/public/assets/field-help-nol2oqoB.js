@@ -1,0 +1,1 @@
+import{K as e,Q as t}from"./index-Bn1IvlHo.js";var n=t();function r({title:t,children:r}){return(0,n.jsxs)(`details`,{className:`field-help`,children:[(0,n.jsxs)(`summary`,{"aria-label":`Ayuda: ${t}`,children:[(0,n.jsx)(e,{size:15}),(0,n.jsx)(`span`,{children:t})]}),(0,n.jsx)(`p`,{children:r})]})}export{r as t};

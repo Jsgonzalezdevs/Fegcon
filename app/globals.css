@@ -493,6 +493,15 @@ input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-vis
 .credit-record-actions label { display:grid; gap:6px; }
 .credit-record-actions select { width:100%; min-width:0; }
 @media (max-width:900px) { .credit-record-detail { grid-template-columns:1fr; padding:14px; } }
+.credit-field-title { display:flex; min-height:20px; align-items:center; gap:9px; }
+.credit-field-title .field-help { position:relative; display:inline-flex; min-width:0; }
+.credit-field-title .field-help summary { display:flex; align-items:center; gap:6px; color:#28766e; font-size:12px; font-weight:500; list-style:none; cursor:pointer; }
+.credit-field-title .field-help summary::-webkit-details-marker { display:none; }
+.credit-field-title .field-help summary svg { flex:none; width:15px; height:15px; }
+.credit-field-title .field-help p { position:absolute; z-index:25; top:calc(100% + 9px); left:0; width:min(320px,80vw); margin:0; padding:12px 14px; border:1px solid #d7e2df; border-radius:11px; color:#4d6260; background:#fff; box-shadow:0 12px 28px rgba(32,52,55,.14); font-size:12px; font-weight:400; line-height:1.55; }
+.associate-picker-control input { min-height:42px; padding:9px 88px 9px 12px; border:1px solid #bdcbc7; border-radius:11px; color:#35504c; background:#fff; box-shadow:0 1px 3px rgba(32,52,55,.08); font-size:14px; font-weight:500; }
+.associate-picker-control input::placeholder { color:#97a8a3; font-weight:400; opacity:1; }
+.associate-picker-control input:focus { border-color:#399d9a; box-shadow:0 0 0 3px rgba(57,157,154,.14); }
 .activity-heading { display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; }
 .activity-filters { display:grid; align-items:end; gap:14px; }
 .activity-filters-charges { grid-template-columns:minmax(250px,1.2fr) minmax(230px,1fr) minmax(190px,.85fr) auto; }
