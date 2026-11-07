@@ -1,5 +1,8 @@
 "use client";
 
+import { CreateRecordButton, RecordFormPanel, RecordFilters } from "./record-workflow";
+import { matchesRecord } from "@/lib/record-search";
+
 import { privateDocumentHref } from "@/lib/private-document";
 
 import { AssociateSelect } from "./associate-select";
@@ -288,6 +291,9 @@ export function CreditScreen({
   role: string;
   go: (view: View) => void;
 }) {
+  const [createOpen, setCreateOpen] = useState(false);
+  const [recordSearch, setRecordSearch] = useState("");
+  const [recordStatus, setRecordStatus] = useState("");
   const canManage = useCapability("credits");
   const [associates, setAssociates] = useState<ApiJson[]>([]),
     [products, setProducts] = useState<ApiJson[]>([]),
@@ -342,6 +348,7 @@ export function CreditScreen({
       setProducts(productData.products || []);
       setRows((creditData.applications || []).sort((a: ApiJson, b: ApiJson) => {
         const rank: Record<string, number> = { alta: 0, normal: 1, baja: 2 };
+
         return (rank[a.priority || "normal"] ?? 1) - (rank[b.priority || "normal"] ?? 1);
       }));
     } catch (reason) {
@@ -537,6 +544,7 @@ export function CreditScreen({
       setNotice(
         "Solicitud de crédito creada. Ahora adjunta los soportes de la modalidad seleccionada.",
       );
+      setCreateOpen(false);
       setAmount("");
       setTerm("");
       setPurpose("");
@@ -550,13 +558,18 @@ export function CreditScreen({
       setBusy(false);
     }
   };
+  const visibleRecords = rows.filter(row =>
+    (!recordStatus || row.status === recordStatus) && matchesRecord(recordSearch, [row.first_name, row.last_name, row.requested_amount, row.credit_channel, row.status, row.id]));
+  const recordStatuses = Array.from(new Set(rows.map(row => String(row.status || "")))).filter(Boolean);
   return (
     <div className="page">
       <Heading
         eyebrow="TESORERÍA"
         title="Créditos"
         text="Solicita y revisa créditos de libre inversión. Consulta los requisitos y el estado de cada solicitud."
-      />
+      >
+        {canManage && <CreateRecordButton id="credits-create" open={createOpen} onOpen={() => setCreateOpen(true)}>Crear crédito</CreateRecordButton>}
+      </Heading>
       {error && associates.length > 0 && (
         <div
           className="auth-error flex items-center justify-between gap-3"
@@ -576,7 +589,7 @@ export function CreditScreen({
           </Button>
         </div>
       )}
-      <section className="data-panel">
+      {createOpen && <RecordFormPanel id="credits-create" title="Nueva solicitud de crédito" description="Selecciona el asociado, revisa su cupo y completa las condiciones de la solicitud." busy={busy} onClose={() => setCreateOpen(false)}>
         {!canManage ? (
           <div className="empty-state role-read-only-note">
             <b>Vista de consulta</b>
@@ -759,7 +772,7 @@ export function CreditScreen({
             </div>
           </form>
         )}
-      </section>
+      </RecordFormPanel>}
       {notice && (
         <div className="flash-message info mt-4" role="status">
           {notice}
@@ -789,6 +802,8 @@ export function CreditScreen({
             </Button>
           </div>
         </div>
+        <RecordFilters search={recordSearch} onSearch={setRecordSearch} status={recordStatus} onStatus={setRecordStatus} statuses={recordStatuses} count={visibleRecords.length} />
+        {!loading && !error && rows.length > 0 && !visibleRecords.length && <div className="empty-state"><b>No hay coincidencias</b><small>Prueba otra búsqueda o cambia el filtro de estado.</small></div>}
         {loading ? (
           <div className="empty-state">Cargando solicitudes…</div>
         ) : error ? (
@@ -803,7 +818,7 @@ export function CreditScreen({
                 <TableRow>
                   <TableHead>Asociado</TableHead>
                   <TableHead>Modalidad y solicitud</TableHead>
-                  <TableHead>Plazo, pago y prioridad</TableHead>
+                  <TableHead>Plazo</TableHead>
                   <TableHead>Cupo aprobado</TableHead>
                   <TableHead>Cuota mensual</TableHead>
                   <TableHead>Estado</TableHead>
@@ -811,7 +826,7 @@ export function CreditScreen({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {rows.map((row) => (
+                {visibleRecords.map((row) => (
                   <Fragment key={row.id}>
                     <TableRow>
                       <TableCell>
@@ -827,7 +842,6 @@ export function CreditScreen({
                       </TableCell>
                       <TableCell>
                         {row.requested_term_months} meses
-                        <CreditTerms application={row} csrf={csrf} onChange={load} />
                       </TableCell>
                       <TableCell>
                         {row.approved_multiplier
@@ -853,7 +867,7 @@ export function CreditScreen({
                         )}
                       </TableCell>
                       <TableCell>
-                        <div className="grid min-w-64 gap-2">
+                        <div className="credit-detail-toggle">
                           <Button
                             variant="outline"
                             onClick={() =>
@@ -865,9 +879,19 @@ export function CreditScreen({
                             }
                           >
                             {documentsFor === Number(row.id)
-                              ? "Cerrar expediente"
-                              : "Expediente de soportes"}
+                              ? "Cerrar detalle"
+                              : "Ver detalle"}
                           </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                    {documentsFor === Number(row.id) && (
+                      <TableRow>
+                        <TableCell colSpan={7}>
+                          <div className="credit-record-detail">
+                            <div className="credit-record-actions">
+                              <h3>Gestión de la solicitud #{row.id}</h3>
+                              <CreditTerms application={row} csrf={csrf} onChange={load} />
                           {row.status === "en_revision" &&
                           role === "superadmin" ? (
                             <>
@@ -982,18 +1006,14 @@ export function CreditScreen({
                               </Button>
                             </>
                           ) : null}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                    {documentsFor === Number(row.id) && (
-                      <TableRow>
-                        <TableCell colSpan={7}>
+                            </div>
                           <CreditDocumentsPanel
                             application={row}
                             csrf={csrf}
                             role={role}
                             onChange={() => void load()}
                           />
+                          </div>
                         </TableCell>
                       </TableRow>
                     )}

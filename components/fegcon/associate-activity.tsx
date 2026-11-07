@@ -1,5 +1,7 @@
 "use client";
 
+import { CreateRecordButton, RecordFormPanel } from "./record-workflow";
+
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { apiFetch } from "@/lib/fegcon-api";
 import { Button } from "@/components/ui/button";
@@ -17,6 +19,7 @@ export function AssociateActivity({
   csrf?: string;
   associateId?: number;
 }) {
+  const [createOpen, setCreateOpen] = useState(false);
   const charges = kind === "charges";
   const canView = useCapability(charges ? "payroll" : "convenios", "view");
   const canManage = useCapability(charges ? "payroll" : "convenios");
@@ -94,6 +97,7 @@ export function AssociateActivity({
           : "Registro guardado.",
       );
       form?.reset();
+      if (form) setCreateOpen(false);
       await load();
     } catch (reason) {
       setError(
@@ -119,11 +123,14 @@ export function AssociateActivity({
   });
   return (
     <section className="data-panel p-6 space-y-4">
+      <div className="activity-heading">
       <h2 className="text-lg font-semibold">
         {charges
           ? "Cobros individuales"
           : "Convenios, compras y beneficios utilizados"}
       </h2>
+      {!associateId && canManage && <CreateRecordButton id={`${kind}-individual-create`} open={createOpen} onOpen={() => setCreateOpen(true)}>{charges ? "Crear cobro individual" : "Registrar uso o compra"}</CreateRecordButton>}
+      </div>
       {charges && (
         <p>
           Organiza cada cobro por su vencimiento: mes completo, primera quincena
@@ -136,7 +143,9 @@ export function AssociateActivity({
         </div>
       )}
       {notice && <p role="status">{notice}</p>}
-      {!associateId && canManage && (
+      {!associateId && canManage && createOpen && (
+        <RecordFormPanel id={`${kind}-individual-create`} title={charges ? "Nuevo cobro individual" : "Registrar uso o compra"}
+          description="Selecciona el asociado y completa la información del registro." busy={busy} onClose={() => setCreateOpen(false)}>
         <form onSubmit={submit} className="grid gap-4 md:grid-cols-2">
           <label>
             Asociado
@@ -219,6 +228,7 @@ export function AssociateActivity({
             {charges ? "Registrar cobro" : "Registrar uso o compra"}
           </Button>
         </form>
+        </RecordFormPanel>
       )}
       <div className="flex flex-wrap gap-4">
         <label>

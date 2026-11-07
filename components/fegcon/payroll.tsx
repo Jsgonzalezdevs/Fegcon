@@ -1,5 +1,8 @@
 "use client";
 
+import { CreateRecordButton, RecordFormPanel, RecordFilters } from "./record-workflow";
+import { matchesRecord } from "@/lib/record-search";
+
 import { AssociateActivity } from "./associate-activity";
 
 import { downloadCsv } from "@/lib/csv";
@@ -38,6 +41,9 @@ export function PayrollCollectionsScreen({
   role: string;
   go: (view: View) => void;
 }) {
+  const [createOpen, setCreateOpen] = useState(false);
+  const [recordSearch, setRecordSearch] = useState("");
+  const [recordStatus, setRecordStatus] = useState("");
   const canManage = useCapability("payroll");
   const [rows, setRows] = useState<ApiJson[]>([]),
     [companies, setCompanies] = useState<ApiJson[]>([]),
@@ -154,6 +160,7 @@ export function PayrollCollectionsScreen({
       }
       setNotice(data.message || "Cambios guardados.");
       form?.reset();
+      if (method === "POST" && form) setCreateOpen(false);
       await load();
       if (selected) {
         const collectionData = await readJson<ApiJson>(
@@ -225,13 +232,18 @@ export function PayrollCollectionsScreen({
     enviado: "recibido",
     recibido: "conciliado",
   };
+  const visibleRecords = rows.filter(row =>
+    (!recordStatus || row.status === recordStatus) && matchesRecord(recordSearch, [row.company_name, row.collection_date, row.status, row.id]));
+  const recordStatuses = Array.from(new Set(rows.map(row => String(row.status || "")))).filter(Boolean);
   return (
     <div className="page">
       <Heading
         eyebrow="TESORERÍA"
         title="Cobros"
         text="Prepara y descarga la relación de cada empresa para los días 10 o 20, registra aportes, cuotas y convenios, y concilia lo recibido. Compartir el archivo con la empresa se hace manualmente."
-      />
+      >
+        {canManage && <CreateRecordButton id="payroll-create" open={createOpen} onOpen={() => setCreateOpen(true)}>Crear relación de cobro</CreateRecordButton>}
+      </Heading>
       <AssociateActivity kind="charges" csrf={csrf} />
       {error && (
         <div className="auth-error" role="alert">
@@ -243,25 +255,7 @@ export function PayrollCollectionsScreen({
           {notice}
         </p>
       )}
-      <section className="data-panel">
-        <div className="table-tools">
-          <div>
-            <b>Nueva relación</b>
-            <small>
-              El valor esperado se calcula desde los conceptos agregados.
-            </small>
-          </div>
-          {!loading && (
-            <Button
-              variant="outline"
-              onClick={() => void load()}
-              disabled={busy}
-            >
-              Actualizar
-            </Button>
-          )}
-        </div>
-        {!canManage ? (
+      {createOpen && <RecordFormPanel id="payroll-create" title="Nueva relación de cobro" description="Selecciona la empresa y la fecha. Después podrás agregar conceptos y revisar el recaudo." busy={busy} onClose={() => setCreateOpen(false)}>        {!canManage ? (
           <div className="empty-state role-read-only-note">
             <b>Vista de consulta</b>
             <small>
@@ -349,7 +343,7 @@ export function PayrollCollectionsScreen({
             </div>
           </form>
         )}
-      </section>
+      </RecordFormPanel>}
       <section className="data-panel mt-6">
         <div className="table-tools">
           <div>
@@ -360,6 +354,8 @@ export function PayrollCollectionsScreen({
           </div>
           <small>{rows.length} registros</small>
         </div>
+        <RecordFilters search={recordSearch} onSearch={setRecordSearch} status={recordStatus} onStatus={setRecordStatus} statuses={recordStatuses} count={visibleRecords.length} />
+        {!loading && !error && rows.length > 0 && !visibleRecords.length && <div className="empty-state"><b>No hay coincidencias</b><small>Prueba otra búsqueda o cambia el filtro de estado.</small></div>}
         {loading ? (
           <div className="empty-state">Cargando relaciones…</div>
         ) : rows.length ? (
@@ -376,7 +372,7 @@ export function PayrollCollectionsScreen({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rows.map((row) => (
+              {visibleRecords.map((row) => (
                 <TableRow key={row.id}>
                   <TableCell>
                     {row.company_name || "Empresa no disponible"}

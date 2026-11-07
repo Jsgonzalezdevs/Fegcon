@@ -1,5 +1,7 @@
 "use client";
 
+import { RecordFormPanel } from "./record-workflow";
+
 import { AssociateActivity } from "./associate-activity";
 
 import { AssociateSelect } from "./associate-select";
@@ -426,11 +428,13 @@ export function ListScreen({
       <Heading eyebrow={screen.eyebrow} title={screen.title} text={screen.text}>
         {canManage && (
           <Button
+            aria-expanded={formOpen}
+            aria-controls={`${view}-create`}
             onClick={() =>
               needsAssociate ? go("asociados") : setFormOpen((open) => !open)
             }
             className="violet-button"
-            disabled={
+            disabled={saving ||
               (view === "pagos" || view === "cartera") &&
               (!associatesLoaded || Boolean(associatesError))
             }
@@ -478,7 +482,9 @@ export function ListScreen({
         formOpen &&
         !needsAssociate &&
         !(associatesError && (view === "pagos" || view === "cartera")) && (
-          <section className="data-panel mb-6">
+          <RecordFormPanel id={`${view}-create`} title={screen.action}
+            description="Completa los datos y revisa la información antes de guardar."
+            busy={saving} onClose={() => setFormOpen(false)}>
             <form className="p-6 grid gap-3 md:grid-cols-2" onSubmit={submit}>
               {view === "afiliaciones" && (
                 <>
@@ -673,7 +679,7 @@ export function ListScreen({
                 </Button>
               </div>
             </form>
-          </section>
+          </RecordFormPanel>
         )}
       {error && (
         <div className="auth-error" role="alert">

@@ -1,0 +1,1 @@
+function e(e,t){let n=e=>String(e??``).normalize(`NFD`).replace(/[\u0300-\u036f]/g,``).replaceAll(`_`,` `).toLocaleLowerCase(`es`);return n(t.join(` `)).includes(n(e).trim())}export{e as t};

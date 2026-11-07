@@ -1,5 +1,8 @@
 "use client";
 
+import { CreateRecordButton, RecordFormPanel, RecordFilters } from "./record-workflow";
+import { matchesRecord } from "@/lib/record-search";
+
 import { AssociateSelect } from "./associate-select";
 
 import { apiFetch } from "@/lib/fegcon-api";
@@ -43,6 +46,9 @@ export function FinanceScreen({
   csrf: string;
   go: (view: View) => void;
 }) {
+  const [createOpen, setCreateOpen] = useState(false);
+  const [recordSearch, setRecordSearch] = useState("");
+  const [recordStatus, setRecordStatus] = useState("");
   const permissions = useContext(PermissionContext);
   const requiresReview = !("all" in permissions);
   const canManage = useCapability("savings");
@@ -164,6 +170,7 @@ export function FinanceScreen({
         go("mis_solicitudes");
         return;
       }
+      setCreateOpen(false);
       setNotice("Movimiento registrado.");
       setAmount("");
       form.reset();
@@ -180,19 +187,24 @@ export function FinanceScreen({
       setBusy(false);
     }
   };
+  const visibleRecords = rows.filter(row =>
+    (!recordStatus || row.status === recordStatus) && matchesRecord(recordSearch, [row.first_name, row.last_name, row.product_name, row.movement_type, row.amount, row.status]));
+  const recordStatuses = Array.from(new Set(rows.map(row => String(row.status || "")))).filter(Boolean);
   return (
     <div className="page">
       <Heading
         eyebrow="OPERACIÓN"
         title={title}
         text="Cada aporte se distribuye entre ahorro a la vista y aportes; los retiros se descuentan del disponible a la vista."
-      />
+      >
+        {canManage && <CreateRecordButton id="savings-create" open={createOpen} onOpen={() => setCreateOpen(true)}>Registrar movimiento</CreateRecordButton>}
+      </Heading>
       {error && associates.length > 0 && (
         <div className="auth-error mb-4" role="alert">
           {error}
         </div>
       )}
-      <section className="data-panel">
+      {createOpen && <RecordFormPanel id="savings-create" title="Registrar aporte o retiro" description="Selecciona el asociado y verifica los valores antes de registrar el movimiento." busy={busy} onClose={() => setCreateOpen(false)}>
         {!canManage ? (
           <div className="empty-state role-read-only-note">
             <b>Vista de consulta</b>
@@ -380,7 +392,8 @@ export function FinanceScreen({
             </div>
           </form>
         )}
-      </section>
+      </RecordFormPanel>}
+      {notice && <div className="flash-message info" role="status">{notice}</div>}
       <section className="data-panel mt-6">
         <div className="table-tools">
           <b>Operaciones registradas</b>
@@ -399,6 +412,8 @@ export function FinanceScreen({
             </Button>
           </div>
         </div>
+        <RecordFilters search={recordSearch} onSearch={setRecordSearch} status={recordStatus} onStatus={setRecordStatus} statuses={recordStatuses} count={visibleRecords.length} />
+        {!loading && !error && rows.length > 0 && !visibleRecords.length && <div className="empty-state"><b>No hay coincidencias</b><small>Prueba otra búsqueda o cambia el filtro de estado.</small></div>}
         {loading ? (
           <div className="empty-state">Cargando movimientos…</div>
         ) : error ? (
@@ -418,7 +433,7 @@ export function FinanceScreen({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rows.map((row) => (
+              {visibleRecords.map((row) => (
                 <TableRow key={row.id}>
                   <TableCell>
                     {row.first_name} {row.last_name}

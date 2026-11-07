@@ -1,5 +1,8 @@
 "use client";
 
+import { CreateRecordButton, RecordFormPanel, RecordFilters } from "./record-workflow";
+import { matchesRecord } from "@/lib/record-search";
+
 import { privateDocumentHref } from "@/lib/private-document";
 
 import { AssociateSelect } from "./associate-select";
@@ -44,6 +47,9 @@ export function PromissoryNotesScreen({
   role: string;
   go: (view: View) => void;
 }) {
+  const [createOpen, setCreateOpen] = useState(false);
+  const [recordSearch, setRecordSearch] = useState("");
+  const [recordStatus, setRecordStatus] = useState("");
   const canManage = useCapability("promissory");
   const [notes, setNotes] = useState<ApiJson[]>([]);
   const [credits, setCredits] = useState<ApiJson[]>([]);
@@ -150,6 +156,7 @@ export function PromissoryNotesScreen({
         go("mis_solicitudes");
         return;
       }
+      setCreateOpen(false);
       setNotice("Pagaré registrado para el crédito aprobado.");
       formElement.reset();
       setAssociateId("");
@@ -232,14 +239,20 @@ export function PromissoryNotesScreen({
       setBusy(false);
     }
   };
+
+  const visibleRecords = notes.filter(row =>
+    (!recordStatus || row.status === recordStatus) && matchesRecord(recordSearch, [row.note_number, row.first_name, row.last_name, row.credit_application_id, row.status]));
+  const recordStatuses = Array.from(new Set(notes.map(row => String(row.status || "")))).filter(Boolean);
   return (
     <div className="page">
       <Heading
         eyebrow="TESORERÍA"
         title="Pagarés"
         text="Cada pagaré se vincula a un crédito aprobado. Sus archivos se guardan en una carpeta privada, fuera del sitio público."
-      />
-      <section className="data-panel">
+      >
+        {canManage && <CreateRecordButton id="promissory-create" open={createOpen} onOpen={() => setCreateOpen(true)}>Registrar pagaré</CreateRecordButton>}
+      </Heading>
+      {createOpen && <RecordFormPanel id="promissory-create" title="Nuevo pagaré" description="Vincula el pagaré a un crédito aprobado y completa los datos de custodia." busy={busy} onClose={() => setCreateOpen(false)}>
         {!canManage ? (
           <div className="empty-state role-read-only-note">
             <b>Vista de consulta</b>
@@ -320,7 +333,8 @@ export function PromissoryNotesScreen({
             </div>
           </form>
         )}
-      </section>
+      </RecordFormPanel>}
+      {notice && <div className="flash-message info" role="status">{notice}</div>}
       <section className="data-panel mt-6">
         <div className="table-tools">
           <div>
@@ -338,6 +352,8 @@ export function PromissoryNotesScreen({
           </Button>
           <small>{notes.length} registros</small>
         </div>
+        <RecordFilters search={recordSearch} onSearch={setRecordSearch} status={recordStatus} onStatus={setRecordStatus} statuses={recordStatuses} count={visibleRecords.length} />
+        {!loading && !loadError && notes.length > 0 && !visibleRecords.length && <div className="empty-state"><b>No hay coincidencias</b><small>Prueba otra búsqueda o cambia el filtro de estado.</small></div>}
         {loading ? (
           <div className="empty-state">Consultando pagarés…</div>
         ) : loadError ? (
@@ -360,7 +376,7 @@ export function PromissoryNotesScreen({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {notes.map((note) => (
+              {visibleRecords.map((note) => (
                 <TableRow key={note.id}>
                   <TableCell>{note.note_number}</TableCell>
                   <TableCell>
