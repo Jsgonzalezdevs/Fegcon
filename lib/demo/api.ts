@@ -616,6 +616,11 @@ export async function handleDemoRequest(
       if (method === "POST") {
         if (!values.first_name || !values.last_name || !values.document_number)
           throw new Error("Completa los datos del solicitante.");
+        const documentKey = String(values.document_number).replace(/[\s.-]/g, "").toUpperCase();
+        if (state.associates.some((row) => String(row.document_number).replace(/[\s.-]/g, "").toUpperCase() === documentKey))
+          throw new Error("Esta persona ya está registrada como asociada en FEGCON.");
+        if (state.affiliations.some((row) => String(row.document_number).replace(/[\s.-]/g, "").toUpperCase() === documentKey))
+          throw new Error("Ya existe una solicitud de afiliación para este documento.");
         result.id = add(state, "affiliations", {
           ...values,
           company_name: values.company,
@@ -628,7 +633,10 @@ export async function handleDemoRequest(
         if (!["aprobada", "rechazada"].includes(values.status))
           throw new Error("Selecciona una decisión válida.");
         row.status = values.status;
-        if (values.status === "aprobada")
+        if (values.status === "aprobada") {
+          const documentKey = String(row.document_number).replace(/[\s.-]/g, "").toUpperCase();
+          if (state.associates.some((associate) => String(associate.document_number).replace(/[\s.-]/g, "").toUpperCase() === documentKey))
+            throw new Error("No se puede aprobar: este documento ya pertenece a un asociado.");
           add(state, "associates", {
             first_name: row.first_name,
             last_name: row.last_name,
@@ -642,6 +650,7 @@ export async function handleDemoRequest(
             email: row.email,
             phone: row.phone,
           });
+        }
       }
     } else if (action === "receivables") {
       validateAssociate(state, values.associate_id);
