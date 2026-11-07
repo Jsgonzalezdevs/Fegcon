@@ -230,7 +230,7 @@ export function AssociateActivity({
         </form>
         </RecordFormPanel>
       )}
-      <div className="flex flex-wrap gap-4">
+      <div className={`activity-filters ${charges ? "activity-filters-charges" : "activity-filters-single"}`}>
         <label>
           Mes
           <Input
