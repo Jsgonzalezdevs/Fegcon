@@ -639,7 +639,7 @@ export function CreditScreen({
               />
             </label>
             <label>
-              Plazo
+              Plazo (meses)
               <Input
                 type="number"
                 min="1"
@@ -648,6 +648,7 @@ export function CreditScreen({
                 onChange={(event) => setTerm(event.target.value)}
                 required
               />
+              <small>El sistema calcula cuotas mensuales. Ingresa de 1 a 60 meses.</small>
             </label>
             <label className="credit-modality-field">
               <span className="credit-field-title">
