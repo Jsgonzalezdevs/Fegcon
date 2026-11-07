@@ -627,11 +627,14 @@ export function CreditScreen({
             <label>
               Monto solicitado
               <Input
-                type="number"
-                min="1"
-                step="1000"
-                value={amount}
-                onChange={(event) => setAmount(event.target.value)}
+                type="text"
+                inputMode="numeric"
+                autoComplete="off"
+                placeholder="Ej. 100.000"
+                value={amount ? Number(amount).toLocaleString("es-CO") : ""}
+                onChange={(event) =>
+                  setAmount(event.target.value.replace(/\D/g, ""))
+                }
                 required
               />
             </label>

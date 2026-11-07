@@ -617,10 +617,11 @@ export async function handleDemoRequest(
         if (!values.first_name || !values.last_name || !values.document_number)
           throw new Error("Completa los datos del solicitante.");
         const documentKey = String(values.document_number).replace(/[\s.-]/g, "").toUpperCase();
-        if (state.associates.some((row) => String(row.document_number).replace(/[\s.-]/g, "").toUpperCase() === documentKey))
+        const existingAssociate = state.associates.find((row) => String(row.document_number).replace(/[\s.-]/g, "").toUpperCase() === documentKey);
+        if (existingAssociate && existingAssociate.status !== "retirado")
           throw new Error("Esta persona ya está registrada como asociada en FEGCON.");
-        if (state.affiliations.some((row) => String(row.document_number).replace(/[\s.-]/g, "").toUpperCase() === documentKey))
-          throw new Error("Ya existe una solicitud de afiliación para este documento.");
+        if (state.affiliations.some((row) => String(row.document_number).replace(/[\s.-]/g, "").toUpperCase() === documentKey && row.status === "en_revision"))
+          throw new Error("Ya existe una solicitud de afiliación pendiente para este documento.");
         result.id = add(state, "affiliations", {
           ...values,
           company_name: values.company,
@@ -633,23 +634,30 @@ export async function handleDemoRequest(
         if (!["aprobada", "rechazada"].includes(values.status))
           throw new Error("Selecciona una decisión válida.");
         row.status = values.status;
+        row.reviewed_at = demoDate();
         if (values.status === "aprobada") {
           const documentKey = String(row.document_number).replace(/[\s.-]/g, "").toUpperCase();
-          if (state.associates.some((associate) => String(associate.document_number).replace(/[\s.-]/g, "").toUpperCase() === documentKey))
-            throw new Error("No se puede aprobar: este documento ya pertenece a un asociado.");
-          add(state, "associates", {
-            first_name: row.first_name,
-            last_name: row.last_name,
-            document_type: "CC",
-            document_number: row.document_number,
-            company: row.company_name,
-            company_id:
-              state.companies.find((c) => c.name === row.company_name)?.id ??
-              null,
-            status: "activo",
-            email: row.email,
-            phone: row.phone,
-          });
+          const existingAssociate = state.associates.find((associate) => String(associate.document_number).replace(/[\s.-]/g, "").toUpperCase() === documentKey);
+          if (existingAssociate && existingAssociate.status !== "retirado")
+            throw new Error("No se puede aprobar: este documento ya pertenece a un asociado activo.");
+          if (existingAssociate) {
+            Object.assign(existingAssociate, {
+              first_name: row.first_name, last_name: row.last_name,
+              company: row.company_name,
+              company_id: state.companies.find((c) => c.name === row.company_name)?.id ?? null,
+              email: row.email, phone: row.phone, status: "activo",
+              affiliation_date: demoDate(),
+            });
+          } else {
+            add(state, "associates", {
+              first_name: row.first_name, last_name: row.last_name,
+              document_type: "CC", document_number: row.document_number,
+              company: row.company_name,
+              company_id: state.companies.find((c) => c.name === row.company_name)?.id ?? null,
+              status: "activo", email: row.email, phone: row.phone,
+              affiliation_date: demoDate(),
+            });
+          }
         }
       }
     } else if (action === "receivables") {

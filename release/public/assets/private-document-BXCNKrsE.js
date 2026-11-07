@@ -1,0 +1,1 @@
+import{S as e,T as t}from"./index-zc_2fiUY.js";function n(n,r=e()){return t(r)?`#demo-document`:n}export{n as t};
